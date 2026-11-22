@@ -908,6 +908,118 @@ private fun ReaderScreen(
         )
     }
 
+    if (showAnnotationDialog && pendingAnnotationPosition in paragraphs.indices) {
+        AlertDialog(
+            onDismissRequest = { showAnnotationDialog = false },
+            title = { Text("Выделение и заметка") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        paragraphs[pendingAnnotationPosition].take(220) + if (paragraphs[pendingAnnotationPosition].length > 220) "…" else "",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = .76f),
+                        maxLines = 5,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text("Цвет маркера", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("yellow" to "Жёлтый", "green" to "Зелёный", "blue" to "Синий", "pink" to "Розовый").forEach { (id, label) ->
+                            FilterChip(
+                                selected = annotationColor == id,
+                                onClick = { annotationColor = id },
+                                label = { Text(label, fontSize = 11.sp) }
+                            )
+                        }
+                    }
+                    OutlinedTextField(
+                        value = annotationNote,
+                        onValueChange = { annotationNote = it },
+                        label = { Text("Заметка к фрагменту") },
+                        placeholder = { Text("Почему этот фрагмент важен?") },
+                        minLines = 2,
+                        maxLines = 4
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val position = pendingAnnotationPosition
+                    if (position in paragraphs.indices) {
+                        onAddAnnotation(
+                            ReaderAnnotation(
+                                id = UUID.randomUUID().toString(),
+                                position = position,
+                                offsetPx = pendingAnnotationOffset,
+                                text = paragraphs[position],
+                                note = annotationNote.trim(),
+                                color = annotationColor
+                            )
+                        )
+                    }
+                    showAnnotationDialog = false
+                }) { Text("Сохранить") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAnnotationDialog = false }) { Text("Отмена") }
+            }
+        )
+    }
+
+    if (showAnnotations) {
+        AlertDialog(
+            onDismissRequest = { showAnnotations = false },
+            title = { Text("Заметки и выделения · ${book.annotations.size}") },
+            text = {
+                if (book.annotations.isEmpty()) {
+                    Text("Пока нет заметок. Удерживайте абзац в тексте, чтобы выделить его цветом и добавить комментарий.")
+                } else {
+                    LazyColumn(Modifier.heightIn(max = 390.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(book.annotations.sortedByDescending { it.createdAt }, key = { it.id }) { item ->
+                            val marker = when (item.color) {
+                                "green" -> Color(0xFF3CBF83)
+                                "blue" -> Color(0xFF4A91E8)
+                                "pink" -> Color(0xFFE879A8)
+                                else -> Color(0xFFE7BD35)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(
+                                    Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            readerScope.launch {
+                                                listState.animateScrollToItem(
+                                                    item.position.coerceIn(0, (paragraphs.size - 1).coerceAtLeast(0)),
+                                                    item.offsetPx.coerceAtLeast(0)
+                                                )
+                                            }
+                                            showAnnotations = false
+                                        }
+                                        .padding(vertical = 9.dp, horizontal = 8.dp)
+                                ) {
+                                    Text(
+                                        item.text.replace('\n', ' '),
+                                        fontSize = 12.sp,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    if (item.note.isNotBlank()) {
+                                        Text(item.note, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .68f))
+                                    }
+                                    Text("Фрагмент ${item.position + 1}", fontSize = 10.sp, color = marker)
+                                }
+                                IconButton(onClick = { onRemoveAnnotation(item.id) }) {
+                                    Icon(Icons.Rounded.DeleteOutline, contentDescription = "Удалить заметку", tint = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f))
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showAnnotations = false }) { Text("Готово") } }
+        )
+    }
+
     if (showSearch) {
         val normalizedQuery = searchQuery.trim()
         val searchResults = remember(normalizedQuery, paragraphs) {
