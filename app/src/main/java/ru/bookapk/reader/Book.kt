@@ -38,6 +38,37 @@ data class ReaderBookmark(
     }
 }
 
+data class ReaderAnnotation(
+    val id: String,
+    val position: Int,
+    val offsetPx: Int = 0,
+    val text: String,
+    val note: String = "",
+    val color: String = "yellow",
+    val createdAt: Long = System.currentTimeMillis()
+) {
+    fun toJson() = JSONObject()
+        .put("id", id)
+        .put("position", position)
+        .put("offsetPx", offsetPx)
+        .put("text", text)
+        .put("note", note)
+        .put("color", color)
+        .put("createdAt", createdAt)
+
+    companion object {
+        fun fromJson(json: JSONObject) = ReaderAnnotation(
+            id = json.optString("id", java.util.UUID.randomUUID().toString()),
+            position = json.optInt("position", 0).coerceAtLeast(0),
+            offsetPx = json.optInt("offsetPx", 0).coerceAtLeast(0),
+            text = json.optString("text", ""),
+            note = json.optString("note", ""),
+            color = json.optString("color", "yellow").takeIf { it in setOf("yellow", "green", "blue", "pink") } ?: "yellow",
+            createdAt = json.optLong("createdAt", 0L)
+        )
+    }
+}
+
 data class Book(
     val id: String,
     val title: String,
@@ -50,17 +81,21 @@ data class Book(
     val bookmarkPosition: Int = -1,
     val isFavorite: Boolean = false,
     val lastOpenedAt: Long = 0L,
-    val bookmarks: List<ReaderBookmark> = emptyList()
+    val bookmarks: List<ReaderBookmark> = emptyList(),
+    val annotations: List<ReaderAnnotation> = emptyList()
 ) {
     fun toJson(): JSONObject {
         val bookmarkArray = JSONArray()
         bookmarks.forEach { bookmarkArray.put(it.toJson()) }
+        val annotationArray = JSONArray()
+        annotations.forEach { annotationArray.put(it.toJson()) }
         return JSONObject()
             .put("id", id).put("title", title).put("path", path).put("type", type)
             .put("progress", progress).put("categoryId", categoryId)
             .put("readingPosition", readingPosition).put("readingOffsetPx", readingOffsetPx).put("bookmarkPosition", bookmarkPosition)
             .put("isFavorite", isFavorite).put("lastOpenedAt", lastOpenedAt)
             .put("bookmarks", bookmarkArray)
+            .put("annotations", annotationArray)
     }
 
     companion object {
@@ -70,6 +105,10 @@ data class Book(
             val bookmarkArray = json.optJSONArray("bookmarks") ?: JSONArray()
             val savedBookmarks = (0 until bookmarkArray.length()).mapNotNull { index ->
                 runCatching { ReaderBookmark.fromJson(bookmarkArray.getJSONObject(index)) }.getOrNull()
+            }
+            val annotationArray = json.optJSONArray("annotations") ?: JSONArray()
+            val annotations = (0 until annotationArray.length()).mapNotNull { index ->
+                runCatching { ReaderAnnotation.fromJson(annotationArray.getJSONObject(index)) }.getOrNull()
             }
             // WHY: migrate the previous single-bookmark field once, without losing existing saved places.
             val bookmarks = if (savedBookmarks.isNotEmpty()) savedBookmarks else if (legacyPosition >= 0) {
@@ -88,7 +127,8 @@ data class Book(
                 bookmarkPosition = legacyPosition,
                 isFavorite = json.optBoolean("isFavorite", false),
                 lastOpenedAt = json.optLong("lastOpenedAt", 0L),
-                bookmarks = bookmarks
+                bookmarks = bookmarks,
+                annotations = annotations
             )
         }
     }
