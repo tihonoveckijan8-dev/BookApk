@@ -16,6 +16,9 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AutoStories
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.Sort
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
@@ -46,16 +49,27 @@ fun LibraryDashboard(
     onCategoryCreate: (BookCategory) -> Unit,
     onCategoryDelete: (BookCategory) -> Unit,
     onBookCategoryChange: (Book, String) -> Unit,
-    onBookDelete: (Book) -> Unit
+    onBookDelete: (Book) -> Unit,
+    onBookFavoriteChange: (Book) -> Unit
 ) {
     var query by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf<String?>(null) }
     var showCategoryDialog by remember { mutableStateOf(false) }
     var categoryName by remember { mutableStateOf("") }
+    var favoritesOnly by remember { mutableStateOf(false) }
+    var sortMode by remember { mutableStateOf("Добавления") }
+    var sortExpanded by remember { mutableStateOf(false) }
 
     val filtered = books.filter { book ->
         book.title.contains(query, ignoreCase = true) &&
-            (selectedCategory == null || book.categoryId == selectedCategory)
+            (selectedCategory == null || book.categoryId == selectedCategory) &&
+            (!favoritesOnly || book.isFavorite)
+    }.let { matches ->
+        when (sortMode) {
+            "Название" -> matches.sortedBy { it.title.lowercase() }
+            "Прогресс" -> matches.sortedByDescending { it.progress }
+            else -> matches.reversed()
+        }
     }
     val lastRead = books.filter { it.progress > 0 }.maxByOrNull { it.progress }
     val categoryLabel = { id: String -> categories.firstOrNull { it.id == id }?.name ?: "Без категории" }
@@ -112,6 +126,12 @@ fun LibraryDashboard(
                 onClick = { selectedCategory = null },
                 label = { Text("Все книги · ${books.size}") }
             )
+            FilterChip(
+                selected = favoritesOnly,
+                onClick = { favoritesOnly = !favoritesOnly },
+                label = { Text("Избранное · ${books.count { it.isFavorite }}") },
+                leadingIcon = { Icon(Icons.Rounded.Favorite, null, modifier = Modifier.size(16.dp)) }
+            )
             categories.forEach { category ->
                 FilterChip(
                     selected = selectedCategory == category.id,
@@ -126,7 +146,7 @@ fun LibraryDashboard(
             ) { Icon(Icons.Rounded.FolderOpen, contentDescription = "Управление категориями") }
         }
 
-        if (lastRead != null && query.isBlank() && selectedCategory == null) {
+        if (lastRead != null && query.isBlank() && selectedCategory == null && !favoritesOnly) {
             Spacer(Modifier.height(16.dp))
             Text("ВОЗВРАЩАЙТЕСЬ К ЧТЕНИЮ", fontSize = 10.sp, letterSpacing = 1.3.sp, fontWeight = FontWeight.Bold, color = accent)
             Spacer(Modifier.height(8.dp))
@@ -159,8 +179,29 @@ fun LibraryDashboard(
 
         Spacer(Modifier.height(19.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(if (selectedCategory == null) "Библиотека" else categoryLabel(selectedCategory!!), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = LibraryInk, modifier = Modifier.weight(1f))
+            Text(
+                when {
+                    favoritesOnly -> "Избранное"
+                    selectedCategory != null -> categoryLabel(selectedCategory!!)
+                    else -> "Библиотека"
+                },
+                fontSize = 20.sp, fontWeight = FontWeight.Bold, color = LibraryInk, modifier = Modifier.weight(1f)
+            )
             Text("${filtered.size} книг", color = LibraryMuted, fontSize = 12.sp)
+            Box {
+                IconButton(onClick = { sortExpanded = true }) {
+                    Icon(Icons.Rounded.Sort, contentDescription = "Сортировка", tint = LibraryMuted)
+                }
+                DropdownMenu(expanded = sortExpanded, onDismissRequest = { sortExpanded = false }) {
+                    listOf("Добавления", "Название", "Прогресс").forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option) },
+                            onClick = { sortMode = option; sortExpanded = false },
+                            trailingIcon = { if (sortMode == option) Icon(Icons.Rounded.Check, null) }
+                        )
+                    }
+                }
+            }
         }
         Spacer(Modifier.height(10.dp))
 
@@ -218,6 +259,13 @@ fun LibraryDashboard(
                                         color = accent
                                     )
                                 }
+                            }
+                            IconButton(onClick = { onBookFavoriteChange(book) }) {
+                                Icon(
+                                    if (book.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                                    contentDescription = if (book.isFavorite) "Убрать из избранного" else "В избранное",
+                                    tint = if (book.isFavorite) Color(0xFFC65D62) else LibraryMuted
+                                )
                             }
                             Box {
                                 IconButton(onClick = { menuExpanded = true }) {
