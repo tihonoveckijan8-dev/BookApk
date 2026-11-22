@@ -575,6 +575,10 @@ private fun ReaderScreen(
     val paragraphs = txtDocument.paragraphs
     val chapterStarts = remember(txtDocument) { txtDocument.chapters.associateBy { it.startParagraph } }
     val currentTextPosition by remember { derivedStateOf { listState.firstVisibleItemIndex } }
+    val currentChapterIndex = remember(currentTextPosition, txtDocument.chapters) {
+        txtDocument.chapters.indexOfLast { it.startParagraph <= currentTextPosition }.coerceAtLeast(0)
+    }
+    val currentChapter = txtDocument.chapters.getOrNull(currentChapterIndex)
     val savedPosition = if (book.type == "pdf") page else currentTextPosition
     val readerBackground = when (activeReaderTheme) {
         "sepia" -> Color(0xFFF1E5CE)
@@ -595,7 +599,15 @@ private fun ReaderScreen(
             IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, contentDescription = "Назад") }
             Column(Modifier.weight(1f)) {
                 Text(book.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(if (book.type == "pdf") "Страница ${page + 1} из $pageCount" else "Текстовая книга · ${paragraphs.size} фрагм.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .58f))
+                Text(
+                    if (book.type == "pdf") "Страница ${page + 1} из $pageCount"
+                    else if (paragraphs.isEmpty()) "Загрузка текста…"
+                    else "Глава ${currentChapterIndex + 1} из ${txtDocument.chapters.size} · ${currentChapter?.title ?: "Начало"}",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = .58f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
             if (book.type == "txt") TextButton(onClick = { showContents = true }) { Text("Оглавление", fontSize = 12.sp) }
             IconButton(onClick = { showBookmarks = true }) {
