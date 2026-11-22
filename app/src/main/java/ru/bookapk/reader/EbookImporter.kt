@@ -19,15 +19,18 @@ import java.util.zip.ZipFile
  * WHY: the current reader already persists exact paragraph/offset positions, bookmarks and notes.
  */
 data class EbookMetadata(val title: String?, val author: String?)
-data class ImportedEbook(val file: File, val title: String?, val author: String?, val cover: File?)
+data class ImportedEbook(val file: File, val title: String?, val author: String?, val cover: File?, val imagesDirectory: File?)
 
 object EbookImporter {
     fun convert(context: Context, source: Uri, format: String): ImportedEbook {
         val outputDirectory = File(context.filesDir, "books").apply { mkdirs() }
         val output = File(outputDirectory, "${java.util.UUID.randomUUID()}.txt")
+        val imageDirectory = if (format.equals("epub", true)) {
+            File(context.filesDir, "ebook-images/${java.util.UUID.randomUUID()}").apply { mkdirs() }
+        } else null
         try {
             val text = when (format.lowercase()) {
-                "epub" -> readEpub(context, source)
+                "epub" -> readEpub(context, source, imageDirectory!!)
                 "fb2" -> readFb2(context, source)
                 else -> throw IllegalArgumentException("Формат электронной книги не поддерживается.")
             }
@@ -37,11 +40,14 @@ object EbookImporter {
             val metadata = runCatching { readMetadata(context, source, format) }.getOrNull()
             val title = metadata?.title?.trim()?.takeIf { it.isNotBlank() }
             val author = metadata?.author?.trim()?.takeIf { it.isNotBlank() }
-            // WHY: preserve a publisher-supplied raster cover separately from normalized reading text.
+            // WHY: keep the cover separate from in-chapter illustrations so the library card stays lightweight.
             val cover = if (format.equals("epub", true)) runCatching { extractEpubCover(context, source) }.getOrNull() else null
-            return ImportedEbook(output, title, author, cover)
+            val images = imageDirectory?.takeIf { it.listFiles()?.isNotEmpty() == true }
+            if (images == null) imageDirectory?.deleteRecursively()
+            return ImportedEbook(output, title, author, cover, images)
         } catch (error: Exception) {
             output.delete()
+            imageDirectory?.deleteRecursively()
             throw error
         }
     }
@@ -202,7 +208,7 @@ object EbookImporter {
         }
     }
 
-    private fun readEpub(context: Context, source: Uri): String {
+    private fun readEpub(context: Context, source: Uri, imageDirectory: File): String {
         val input = context.contentResolver.openInputStream(source)
             ?: throw IllegalStateException("Не удалось открыть EPUB-файл.")
         val temp = File(context.cacheDir, "ebook-${java.util.UUID.randomUUID()}.epub")
@@ -230,6 +236,8 @@ object EbookImporter {
 
                 val opfUri = URI(opfPath)
                 val tocTitles = readEpubTocTitles(zip, packageDoc, manifest, opfUri)
+                // WHY: image assets are copied once and referenced by stable local names in the normalized text.
+                val extractedImages = linkedMapOf<String, String>()
                 val result = StringBuilder()
                 spineIds.forEachIndexed { index, id ->
                     val href = manifest[id] ?: return@forEachIndexed
@@ -241,6 +249,17 @@ object EbookImporter {
                     document.select("script,style,nav,head").remove()
                     val body = document.body()
                     val blockTags = setOf("h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "blockquote")
+                    document.select("img[src]").forEach { image ->
+                        val fileName = extractEpubImage(zip, entryPath, image.attr("src"), imageDirectory, extractedImages)
+                        val marker = fileName?.let { "\\n\\n[[BOOK_IMAGE:$it]]\\n\\n" }
+                            ?: image.attr("alt").takeIf { it.isNotBlank() }.orEmpty()
+                        // WHY: a standalone image becomes its own reader paragraph; inline images keep their position.
+                        if (image.parents().none { it.tagName() in blockTags }) {
+                            image.replaceWith(Element("p").appendChild(TextNode(marker)))
+                        } else {
+                            image.replaceWith(TextNode(marker))
+                        }
+                    }
                     val blocks = body.select("h1,h2,h3,h4,h5,h6,p,li,blockquote")
                         // WHY: EPUBs often wrap paragraphs in list items or blockquotes; keep the outer block once.
                         .filter { element ->
@@ -275,6 +294,46 @@ object EbookImporter {
         } finally {
             temp.delete()
         }
+    }
+
+    private fun extractEpubImage(
+        zip: ZipFile,
+        chapterPath: String,
+        source: String,
+        directory: File,
+        extracted: MutableMap<String, String>
+    ): String? {
+        return runCatching {
+            val reference = URI(source)
+            if (reference.isAbsolute || reference.rawAuthority != null) return@runCatching null
+            val resolved = URI(chapterPath).resolve(reference).normalize()
+            val path = resolved.path.removePrefix("/")
+            if (path.isBlank() || path.split("/").contains("..")) return@runCatching null
+            extracted[path]?.let { return@runCatching it }
+            val entry = zip.getEntry(path) ?: return@runCatching null
+            val extension = path.substringAfterLast('.', "").lowercase()
+            if (extension !in setOf("jpg", "jpeg", "png", "webp", "gif")) return@runCatching null
+            if (entry.size !in 1..(12L * 1024L * 1024L)) return@runCatching null
+            val total = directory.listFiles()?.sumOf { it.length() } ?: 0L
+            if (total + entry.size > 80L * 1024L * 1024L) return@runCatching null
+            val name = "image-${(extracted.size + 1).toString().padStart(4, '0')}.$extension"
+            val target = File(directory, name)
+            zip.getInputStream(entry).use { input ->
+                target.outputStream().buffered().use { output ->
+                    val buffer = ByteArray(16 * 1024)
+                    var copied = 0L
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        copied += count
+                        require(copied <= 12L * 1024L * 1024L && total + copied <= 80L * 1024L * 1024L)
+                        output.write(buffer, 0, count)
+                    }
+                }
+            }
+            extracted[path] = name
+            name
+        }.getOrNull()
     }
 
     /**
