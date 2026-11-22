@@ -264,6 +264,13 @@ private fun BookApkApp() {
                         persistBooks(updated)
                         activeBook = updated.firstOrNull { it.id == activeBook!!.id }
                     },
+                    onUpdateAnnotation = { edited ->
+                        val updated = books.map { current ->
+                            if (current.id == activeBook!!.id) current.copy(annotations = current.annotations.map { if (it.id == edited.id) edited else it }) else current
+                        }
+                        persistBooks(updated)
+                        activeBook = updated.firstOrNull { it.id == activeBook!!.id }
+                    },
                     onRemoveAnnotation = { annotationId ->
                         val updated = books.map { current ->
                             if (current.id == activeBook!!.id) current.copy(annotations = current.annotations.filterNot { it.id == annotationId }) else current
@@ -554,6 +561,7 @@ private fun ReaderScreen(
     onBookmark: (Int, Int, String, String) -> Unit,
     onUpdateBookmark: (ReaderBookmark) -> Unit,
     onAddAnnotation: (ReaderAnnotation) -> Unit,
+    onUpdateAnnotation: (ReaderAnnotation) -> Unit,
     onRemoveAnnotation: (String) -> Unit,
     onRemoveBookmark: (String) -> Unit,
     visualStyle: String,
@@ -578,6 +586,8 @@ private fun ReaderScreen(
     var bookmarkNote by remember { mutableStateOf("") }
     var editingBookmarkId by remember { mutableStateOf<String?>(null) }
     var showAnnotations by remember { mutableStateOf(false) }
+    var annotationFilter by remember { mutableStateOf("all") }
+    var editingAnnotationId by remember { mutableStateOf<String?>(null) }
     var showAnnotationDialog by remember { mutableStateOf(false) }
     var annotationNote by remember { mutableStateOf("") }
     var annotationColor by remember { mutableStateOf("yellow") }
@@ -714,6 +724,7 @@ private fun ReaderScreen(
                                 detectTapGestures(onLongPress = {
                                     pendingAnnotationPosition = index
                                     pendingAnnotationOffset = if (listState.firstVisibleItemIndex == index) listState.firstVisibleItemScrollOffset else 0
+                                    editingAnnotationId = annotation?.id
                                     annotationNote = annotation?.note.orEmpty()
                                     annotationColor = annotation?.color ?: "yellow"
                                     showAnnotationDialog = true
@@ -910,8 +921,8 @@ private fun ReaderScreen(
 
     if (showAnnotationDialog && pendingAnnotationPosition in paragraphs.indices) {
         AlertDialog(
-            onDismissRequest = { showAnnotationDialog = false },
-            title = { Text("Выделение и заметка") },
+            onDismissRequest = { editingAnnotationId = null; showAnnotationDialog = false },
+            title = { Text(if (editingAnnotationId == null) "Выделение и заметка" else "Редактировать заметку") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
@@ -945,22 +956,24 @@ private fun ReaderScreen(
                 TextButton(onClick = {
                     val position = pendingAnnotationPosition
                     if (position in paragraphs.indices) {
-                        onAddAnnotation(
-                            ReaderAnnotation(
-                                id = UUID.randomUUID().toString(),
-                                position = position,
-                                offsetPx = pendingAnnotationOffset,
-                                text = paragraphs[position],
-                                note = annotationNote.trim(),
-                                color = annotationColor
-                            )
+                        val existing = book.annotations.firstOrNull { it.id == editingAnnotationId }
+                        val updated = ReaderAnnotation(
+                            id = existing?.id ?: UUID.randomUUID().toString(),
+                            position = position,
+                            offsetPx = pendingAnnotationOffset,
+                            text = paragraphs[position],
+                            note = annotationNote.trim(),
+                            color = annotationColor,
+                            createdAt = existing?.createdAt ?: System.currentTimeMillis()
                         )
+                        if (existing == null) onAddAnnotation(updated) else onUpdateAnnotation(updated)
                     }
+                    editingAnnotationId = null
                     showAnnotationDialog = false
                 }) { Text("Сохранить") }
             },
             dismissButton = {
-                TextButton(onClick = { showAnnotationDialog = false }) { Text("Отмена") }
+                TextButton(onClick = { editingAnnotationId = null; showAnnotationDialog = false }) { Text("Отмена") }
             }
         )
     }
