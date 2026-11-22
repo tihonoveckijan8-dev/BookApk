@@ -60,12 +60,16 @@ private fun BookApkApp() {
     val store = remember { LibraryStore(context) }
     val scope = rememberCoroutineScope()
     var books by remember { mutableStateOf<List<Book>>(emptyList()) }
+    var categories by remember { mutableStateOf<List<BookCategory>>(emptyList()) }
     var activeBook by remember { mutableStateOf<Book?>(null) }
-    var query by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) { books = withContext(Dispatchers.IO) { store.load() } }
+    LaunchedEffect(Unit) {
+        val loaded = withContext(Dispatchers.IO) { store.load() }
+        books = loaded
+        categories = withContext(Dispatchers.IO) { store.loadCategories() }
+    }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
@@ -105,92 +109,35 @@ private fun BookApkApp() {
     )) {
         Surface(Modifier.fillMaxSize(), color = Warm) {
             if (activeBook == null) {
-                Column(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 20.dp)) {
-                    Spacer(Modifier.height(18.dp))
-                    Text("Моя библиотека", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Ink)
-                    Text("Ваши книги — всегда под рукой", color = Color(0xFF737A75), fontSize = 14.sp)
-                    Spacer(Modifier.height(22.dp))
-                    OutlinedTextField(
-                        value = query, onValueChange = { query = it },
-                        modifier = Modifier.fillMaxWidth(), singleLine = true,
-                        placeholder = { Text("Найти книгу") },
-                        leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = "Поиск") },
-                        shape = RoundedCornerShape(18.dp)
-                    )
-                    Spacer(Modifier.height(18.dp))
-                    val last = books.filter { it.progress > 0 }.maxByOrNull { it.progress }
-                    if (last != null) {
-                        Text("Продолжить чтение", fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
-                        Spacer(Modifier.height(10.dp))
-                        Card(
-                            modifier = Modifier.fillMaxWidth().clickable { activeBook = last },
-                            shape = RoundedCornerShape(22.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFFE2F0EC))
-                        ) {
-                            Column(Modifier.padding(18.dp)) {
-                                Text(last.title, fontWeight = FontWeight.Bold, fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Spacer(Modifier.height(12.dp))
-                                LinearProgressIndicator(
-                                    progress = { (last.progress / 100f).coerceIn(0f, 1f) },
-                                    modifier = Modifier.fillMaxWidth(), color = Teal
-                                )
-                                Spacer(Modifier.height(7.dp))
-                                Text("Продолжить · ${last.progress}%", color = Teal, fontWeight = FontWeight.Medium)
-                            }
+                LibraryDashboard(
+                    books = books,
+                    categories = categories,
+                    onImport = { picker.launch(arrayOf("application/pdf", "text/plain")) },
+                    onOpen = { activeBook = it },
+                    onCategoryCreate = { category ->
+                        categories = categories + category
+                        scope.launch(Dispatchers.IO) { store.saveCategories(categories) }
+                    },
+                    onCategoryDelete = { category ->
+                        categories = categories.filterNot { it.id == category.id }
+                        books = books.map { if (it.categoryId == category.id) it.copy(categoryId = "") else it }
+                        scope.launch(Dispatchers.IO) {
+                            store.saveCategories(categories)
+                            store.save(books)
                         }
-                        Spacer(Modifier.height(22.dp))
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Все книги", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                        Text("${books.size}", color = Color.Gray)
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    val filtered = books.filter { it.title.contains(query, ignoreCase = true) }
-                    if (filtered.isEmpty()) {
-                        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(Icons.Rounded.Book, null, tint = Teal, modifier = Modifier.size(52.dp))
-                                Spacer(Modifier.height(12.dp))
-                                Text(if (books.isEmpty()) "Добавьте PDF или TXT, чтобы начать читать" else "Ничего не найдено", color = Color(0xFF6F7771))
-                                if (books.isEmpty()) {
-                                    Spacer(Modifier.height(14.dp))
-                                    Button(onClick = { picker.launch(arrayOf("application/pdf", "text/plain")) }) { Text("Добавить книгу") }
-                                }
-                            }
-                        }
-                    } else {
-                        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 100.dp)) {
-                            items(filtered, key = { it.id }) { book ->
-                                Card(
-                                    modifier = Modifier.fillMaxWidth().clickable { activeBook = book },
-                                    shape = RoundedCornerShape(18.dp),
-                                    colors = CardDefaults.cardColors(containerColor = Color.White)
-                                ) {
-                                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Box(Modifier.size(54.dp, 70.dp).background(if (book.type == "pdf") Color(0xFFE3E9E7) else Color(0xFFD9EEE8), RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
-                                            Text(if (book.type == "pdf") "PDF" else "TXT", color = Teal, fontWeight = FontWeight.Bold)
-                                        }
-                                        Spacer(Modifier.width(14.dp))
-                                        Column(Modifier.weight(1f)) {
-                                            Text(book.title, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                            Text(if (book.type == "pdf") "Документ PDF" else "Текстовая книга", color = Color.Gray, fontSize = 13.sp)
-                                            if (book.progress > 0) Text("Прогресс: ${book.progress}%", color = Teal, fontSize = 12.sp)
-                                        }
-                                    }
-                                }
-                            }
+                    },
+                    onBookCategoryChange = { book, categoryId ->
+                        books = books.map { if (it.id == book.id) it.copy(categoryId = categoryId) else it }
+                        scope.launch(Dispatchers.IO) { store.save(books) }
+                    },
+                    onBookDelete = { book ->
+                        books = books.filterNot { it.id == book.id }
+                        scope.launch(Dispatchers.IO) {
+                            store.save(books)
+                            runCatching { File(book.path).delete() }
                         }
                     }
-                }
-                if (books.isNotEmpty()) {
-                    ExtendedFloatingActionButton(
-                        onClick = { picker.launch(arrayOf("application/pdf", "text/plain")) },
-                        modifier = Modifier.padding(20.dp).navigationBarsPadding(),
-                        icon = { Icon(Icons.Rounded.Add, contentDescription = "Добавить") },
-                        text = { Text("Добавить книгу") },
-                        containerColor = Teal, contentColor = Color.White
-                    )
-                }
+                )
             } else {
                 ReaderScreen(
                     book = activeBook!!,
