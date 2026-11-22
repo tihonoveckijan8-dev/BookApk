@@ -625,6 +625,8 @@ private fun ReaderScreen(
     var showNotesDialog by remember { mutableStateOf(false) }
     var showNoteEditor by remember { mutableStateOf(false) }
     var noteDraft by remember { mutableStateOf("") }
+    var showSearchDialog by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
 
     val txtListState = androidx.compose.foundation.lazy.rememberLazyListState()
     val pdfListState = androidx.compose.foundation.lazy.rememberLazyListState()
@@ -741,6 +743,13 @@ private fun ReaderScreen(
                 }
                 TextButton(onClick = { showNotesDialog = true }) {
                     Text("Заметки · " + book.notes.size)
+                }
+                if (book.type != "pdf") {
+                    TextButton(onClick = { showSearchDialog = true }) {
+                        Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Найти")
+                    }
                 }
             }
 
@@ -868,6 +877,67 @@ private fun ReaderScreen(
                 }
             }
         }
+    }
+
+    if (showSearchDialog && book.type != "pdf") {
+        AlertDialog(
+            onDismissRequest = { showSearchDialog = false },
+            title = { Text("Поиск по книге") },
+            text = {
+                Column(Modifier.heightIn(max = 440.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it.take(100) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text("Слово или фраза") },
+                        leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) }
+                    )
+                    val paragraphs = remember(text) {
+                        (text ?: "").split(Regex("\\n\\s*\\n")).filter { it.isNotBlank() }
+                            .ifEmpty { listOf(text ?: "") }
+                    }
+                    val matches = remember(searchQuery, paragraphs) {
+                        val needle = searchQuery.trim()
+                        if (needle.length < 2) emptyList()
+                        else paragraphs.mapIndexedNotNull { index, paragraph ->
+                            val matchIndex = paragraph.indexOf(needle, ignoreCase = true)
+                            if (matchIndex < 0) null else {
+                                val start = (matchIndex - 55).coerceAtLeast(0)
+                                val end = (matchIndex + needle.length + 85).coerceAtMost(paragraph.length)
+                                Pair(index, paragraph.substring(start, end).trim())
+                            }
+                        }
+                    }
+                    if (searchQuery.trim().length < 2) {
+                        Text("Введите минимум два символа.", color = Color.Gray, fontSize = 13.sp)
+                    } else if (matches.isEmpty()) {
+                        Text("Совпадений не найдено.", color = Color.Gray, fontSize = 13.sp)
+                    } else {
+                        Text("Найдено фрагментов: ${matches.size}", color = Teal, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            matches.take(100).forEach { (position, snippet) ->
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth().clickable {
+                                        showSearchDialog = false
+                                        jumpTo(position)
+                                    },
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = Color(0xFFF1F5F2)
+                                ) {
+                                    Column(Modifier.padding(12.dp)) {
+                                        Text("Фрагмент ${position + 1}", color = Teal, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                        Text(snippet, maxLines = 3, overflow = TextOverflow.Ellipsis, fontSize = 13.sp)
+                                    }
+                                }
+                            }
+                            if (matches.size > 100) Text("Показаны первые 100 результатов.", color = Color.Gray, fontSize = 11.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showSearchDialog = false }) { Text("Закрыть") } }
+        )
     }
 
     if (showNoteEditor) {
