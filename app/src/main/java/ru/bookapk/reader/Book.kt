@@ -18,13 +18,14 @@ data class Book(
     val categoryId: String = "",
     val readingPosition: Int = 0,
     val bookmarkPosition: Int = -1,
-    val isFavorite: Boolean = false
+    val isFavorite: Boolean = false,
+    val lastOpenedAt: Long = 0L
 ) {
     fun toJson() = JSONObject()
         .put("id", id).put("title", title).put("path", path).put("type", type)
         .put("progress", progress).put("categoryId", categoryId)
         .put("readingPosition", readingPosition).put("bookmarkPosition", bookmarkPosition)
-        .put("isFavorite", isFavorite)
+        .put("isFavorite", isFavorite).put("lastOpenedAt", lastOpenedAt)
 
     companion object {
         fun fromJson(json: JSONObject) = Book(
@@ -36,7 +37,8 @@ data class Book(
             categoryId = json.optString("categoryId", ""),
             readingPosition = json.optInt("readingPosition", 0),
             bookmarkPosition = json.optInt("bookmarkPosition", -1),
-            isFavorite = json.optBoolean("isFavorite", false)
+            isFavorite = json.optBoolean("isFavorite", false),
+            lastOpenedAt = json.optLong("lastOpenedAt", 0L)
         )
     }
 }
