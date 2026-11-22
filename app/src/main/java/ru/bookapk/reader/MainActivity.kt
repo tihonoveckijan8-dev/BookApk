@@ -61,6 +61,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -219,9 +220,9 @@ private fun BookApkApp() {
                 else -> ReaderScreen(
                     book = activeBook!!,
                     onBack = { activeBook = null },
-                    onPosition = { position, progress ->
+                    onPosition = { position, progress, offsetPx ->
                         val updated = books.map {
-                            if (it.id == activeBook!!.id) it.copy(readingPosition = position, progress = progress, lastOpenedAt = System.currentTimeMillis()) else it
+                            if (it.id == activeBook!!.id) it.copy(readingPosition = position, readingOffsetPx = offsetPx, progress = progress, lastOpenedAt = System.currentTimeMillis()) else it
                         }
                         persistBooks(updated)
                         activeBook = updated.firstOrNull { it.id == activeBook!!.id }
@@ -518,7 +519,7 @@ private fun LauncherIconPreview(style: String) {
 private fun ReaderScreen(
     book: Book,
     onBack: () -> Unit,
-    onPosition: (Int, Int) -> Unit,
+    onPosition: (Int, Int, Int) -> Unit,
     onBookmark: (Int, String) -> Unit,
     onRemoveBookmark: (String) -> Unit,
     visualStyle: String,
@@ -547,7 +548,10 @@ private fun ReaderScreen(
     var scale by remember(book.id) { mutableFloatStateOf(1f) }
     var scrubPage by remember(book.id) { mutableFloatStateOf(book.readingPosition.coerceAtLeast(0).toFloat()) }
     var dragTotal by remember { mutableFloatStateOf(0f) }
-    val listState = rememberLazyListState(initialFirstVisibleItemIndex = book.readingPosition.coerceAtLeast(0))
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = book.readingPosition.coerceAtLeast(0),
+        initialFirstVisibleItemScrollOffset = book.readingOffsetPx.coerceAtLeast(0)
+    )
     val readerScope = rememberCoroutineScope()
 
     LaunchedEffect(book.id) {
@@ -568,7 +572,10 @@ private fun ReaderScreen(
 
     LaunchedEffect(book.id, txtDocument.paragraphs.size) {
         if (book.type == "txt" && txtDocument.paragraphs.isNotEmpty()) {
-            listState.scrollToItem(book.readingPosition.coerceIn(0, txtDocument.paragraphs.lastIndex))
+            listState.scrollToItem(
+                book.readingPosition.coerceIn(0, txtDocument.paragraphs.lastIndex),
+                book.readingOffsetPx.coerceAtLeast(0)
+            )
         }
     }
 
@@ -652,10 +659,16 @@ private fun ReaderScreen(
                     )
                 }
             }
-            LaunchedEffect(listState.firstVisibleItemIndex, paragraphs.size) {
+            LaunchedEffect(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset, paragraphs.size) {
                 if (paragraphs.isNotEmpty()) {
+                    // WHY: debounce persistence so a drag writes one stable reading position, not every scroll frame.
+                    delay(350)
                     val position = listState.firstVisibleItemIndex
-                    onPosition(position, if (paragraphs.size <= 1) 0 else position * 100 / (paragraphs.size - 1))
+                    onPosition(
+                        position,
+                        if (paragraphs.size <= 1) 0 else position * 100 / (paragraphs.size - 1),
+                        listState.firstVisibleItemScrollOffset
+                    )
                 }
             }
         } else {
@@ -734,7 +747,7 @@ private fun ReaderScreen(
             LaunchedEffect(page, pageCount) {
                 if (pageCount > 0) {
                     scrubPage = page.toFloat()
-                    onPosition(page, if (pageCount <= 1) 0 else page * 100 / (pageCount - 1))
+                    onPosition(page, if (pageCount <= 1) 0 else page * 100 / (pageCount - 1), 0)
                 }
             }
             Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 4.dp)) {
