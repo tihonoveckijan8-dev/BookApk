@@ -1,6 +1,7 @@
 package ru.bookapk.reader
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -38,6 +39,7 @@ fun LibraryDashboard(
     categories: List<BookCategory>,
     onImport: () -> Unit,
     onSettings: () -> Unit,
+    visualStyle: String,
     onOpen: (Book) -> Unit,
     onCategoryCreate: (BookCategory) -> Unit,
     onCategoryDelete: (BookCategory) -> Unit,
@@ -55,9 +57,11 @@ fun LibraryDashboard(
     }
     val lastRead = books.filter { it.progress > 0 }.maxByOrNull { it.progress }
     val categoryLabel = { id: String -> categories.firstOrNull { it.id == id }?.name ?: "Без категории" }
+    val canvas = when (visualStyle) { "clay" -> Color(0xFFE8E5DE); "glass" -> Color(0xFFEAF1F2); else -> LibraryCanvas }
+    val cardSurface = when (visualStyle) { "clay" -> Color(0xFFECE9E1); "glass" -> Color(0xDDFBFFFF); else -> Color.White }
 
     Column(
-        Modifier.fillMaxSize().background(LibraryCanvas).statusBarsPadding()
+        Modifier.fillMaxSize().background(canvas).statusBarsPadding()
             .padding(horizontal = 20.dp)
     ) {
         Spacer(Modifier.height(16.dp))
@@ -83,9 +87,9 @@ fun LibraryDashboard(
             shape = RoundedCornerShape(18.dp),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = LibraryTeal,
-                unfocusedBorderColor = Color(0xFFE5E6E0),
-                focusedContainerColor = Color.White,
-                unfocusedContainerColor = Color.White
+                unfocusedBorderColor = if (visualStyle == "glass") Color.White.copy(alpha = .8f) else Color(0xFFE5E6E0),
+                focusedContainerColor = cardSurface,
+                unfocusedContainerColor = cardSurface
             )
         )
         Spacer(Modifier.height(14.dp))
@@ -121,11 +125,11 @@ fun LibraryDashboard(
                 onClick = { onOpen(lastRead) },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(22.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFE2F0EC))
+                colors = CardDefaults.cardColors(containerColor = if (visualStyle == "classic") Color(0xFFE2F0EC) else cardSurface)
             ) {
                 Row(Modifier.padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(
-                        Modifier.size(54.dp, 68.dp).background(Color(0xFFC7E2D9), RoundedCornerShape(10.dp)),
+                        Modifier.size(54.dp, 68.dp).background(if (visualStyle == "clay") Color(0xFFD7D3CA) else Color(0xFFC7E2D9), RoundedCornerShape(10.dp)),
                         contentAlignment = Alignment.Center
                     ) { Icon(Icons.Rounded.AutoStories, null, tint = LibraryTeal, modifier = Modifier.size(27.dp)) }
                     Spacer(Modifier.width(14.dp))
@@ -173,8 +177,9 @@ fun LibraryDashboard(
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(19.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                        colors = CardDefaults.cardColors(containerColor = cardSurface),
+                        elevation = CardDefaults.cardElevation(defaultElevation = if (visualStyle == "clay") 5.dp else 1.dp),
+                        border = if (visualStyle == "glass") androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = .85f)) else null
                     ) {
                         Row(
                             Modifier.padding(start = 12.dp, end = 7.dp, top = 12.dp, bottom = 12.dp),
