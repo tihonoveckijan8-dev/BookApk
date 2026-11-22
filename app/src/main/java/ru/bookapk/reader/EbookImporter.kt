@@ -16,7 +16,7 @@ import java.util.zip.ZipFile
  * WHY: the current reader already persists exact paragraph/offset positions, bookmarks and notes.
  */
 data class EbookMetadata(val title: String?, val author: String?)
-data class ImportedEbook(val file: File, val title: String?, val author: String?)
+data class ImportedEbook(val file: File, val title: String?, val author: String?, val cover: File?)
 
 object EbookImporter {
     fun convert(context: Context, source: Uri, format: String): ImportedEbook {
@@ -34,7 +34,9 @@ object EbookImporter {
             val metadata = runCatching { readMetadata(context, source, format) }.getOrNull()
             val title = metadata?.title?.trim()?.takeIf { it.isNotBlank() }
             val author = metadata?.author?.trim()?.takeIf { it.isNotBlank() }
-            return ImportedEbook(output, title, author)
+            // WHY: preserve a publisher-supplied raster cover separately from normalized reading text.
+            val cover = if (format.equals("epub", true)) runCatching { extractEpubCover(context, source) }.getOrNull() else null
+            return ImportedEbook(output, title, author, cover)
         } catch (error: Exception) {
             output.delete()
             throw error
@@ -105,6 +107,77 @@ object EbookImporter {
                 }
             }
             else -> null
+        }
+    }
+
+
+    private fun extractEpubCover(context: Context, source: Uri): File? {
+        val input = context.contentResolver.openInputStream(source) ?: return null
+        val temp = File(context.cacheDir, "ebook-cover-${java.util.UUID.randomUUID()}.epub")
+        input.use { stream -> temp.outputStream().use { stream.copyTo(it) } }
+        try {
+            ZipFile(temp).use { zip ->
+                val container = zip.getEntry("META-INF/container.xml") ?: return null
+                val containerText = zip.getInputStream(container).bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
+                val rootfile = Jsoup.parse(containerText, "", Parser.xmlParser())
+                    .getElementsByTag("rootfile").firstOrNull() ?: return null
+                val opfPath = rootfile.attr("full-path")
+                if (opfPath.isBlank() || opfPath.startsWith("/") || opfPath.split("/").contains("..")) return null
+                val opfEntry = zip.getEntry(opfPath) ?: return null
+                val packageDoc = zip.getInputStream(opfEntry).bufferedReader(StandardCharsets.UTF_8).use {
+                    Jsoup.parse(it.readText(), "", Parser.xmlParser())
+                }
+                val manifestItems = packageDoc.getElementsByTag("item")
+                val epub3Cover = manifestItems.firstOrNull {
+                    it.attr("properties").split(Regex("\\s+")).contains("cover-image")
+                }
+                val legacyCoverId = packageDoc.getElementsByTag("meta").firstOrNull {
+                    it.attr("name").equals("cover", true)
+                }?.attr("content").orEmpty()
+                val coverItem = epub3Cover ?: manifestItems.firstOrNull { it.attr("id") == legacyCoverId }
+                    ?: return null
+                val href = coverItem.attr("href")
+                if (href.isBlank()) return null
+                val imageUri = URI(opfPath).resolve(href).normalize()
+                val imagePath = imageUri.path.removePrefix("/")
+                if (imageUri.isAbsolute || imagePath.isBlank() || imagePath.split("/").contains("..")) return null
+                val entry = zip.getEntry(imagePath) ?: return null
+                val mediaType = coverItem.attr("media-type").lowercase()
+                val extension = when {
+                    mediaType == "image/jpeg" -> "jpg"
+                    mediaType == "image/png" -> "png"
+                    mediaType == "image/webp" -> "webp"
+                    mediaType == "image/gif" -> "gif"
+                    else -> imagePath.substringAfterLast('.', "").lowercase()
+                        .takeIf { it in setOf("jpg", "jpeg", "png", "webp", "gif") } ?: return null
+                }
+                if (entry.size > 12L * 1024L * 1024L) return null
+                val directory = File(context.filesDir, "covers").apply { mkdirs() }
+                val output = File(directory, "${java.util.UUID.randomUUID()}.$extension")
+                try {
+                    zip.getInputStream(entry).use { imageInput ->
+                        output.outputStream().buffered().use { imageOutput ->
+                            val buffer = ByteArray(8192)
+                            var copied = 0L
+                            while (true) {
+                                val count = imageInput.read(buffer)
+                                if (count < 0) break
+                                copied += count
+                                require(copied <= 12L * 1024L * 1024L) { "Обложка EPUB слишком большая." }
+                                imageOutput.write(buffer, 0, count)
+                            }
+                        }
+                    }
+                    if (output.length() > 0L) return output
+                } catch (error: Exception) {
+                    output.delete()
+                    throw error
+                }
+                output.delete()
+                return null
+            }
+        } finally {
+            temp.delete()
         }
     }
 
