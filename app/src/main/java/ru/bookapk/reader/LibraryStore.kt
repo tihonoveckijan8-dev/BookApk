@@ -75,7 +75,7 @@ class LibraryStore(private val context: Context) {
         val bookArray = JSONArray()
         books.forEach { bookArray.put(it.toJson()) }
         val categoryArray = JSONArray()
-        categories.forEach { categoryArray.put(category.toJson()) }
+        categories.forEach { category -> categoryArray.put(category.toJson()) }
 
         // WHY: restore the complete library in one DataStore transaction, so metadata cannot be half-restored.
         context.dataStore.edit { preferences ->
