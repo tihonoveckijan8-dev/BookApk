@@ -11,11 +11,13 @@ data class Book(
     // WHY: favorites belong to the local book record so they survive app restarts and work offline.
     val isFavorite: Boolean = false,
     // WHY: category is stored with each book so assigning a folder works fully offline.
-    val category: String = ""
+    val category: String = "",
+    // WHY: a stable import timestamp enables "recently added" sorting after every restart.
+    val addedAt: Long = System.currentTimeMillis()
 ) {
     fun toJson() = JSONObject().put("id", id).put("title", title)
         .put("path", path).put("type", type).put("progress", progress)
-        .put("isFavorite", isFavorite).put("category", category)
+        .put("isFavorite", isFavorite).put("category", category).put("addedAt", addedAt)
 
     companion object {
         fun fromJson(json: JSONObject) = Book(
@@ -25,7 +27,8 @@ data class Book(
             type = json.getString("type"),
             progress = json.optInt("progress", 0),
             isFavorite = json.optBoolean("isFavorite", false),
-            category = json.optString("category", "")
+            category = json.optString("category", ""),
+            addedAt = json.optLong("addedAt", System.currentTimeMillis())
         )
     }
 }
