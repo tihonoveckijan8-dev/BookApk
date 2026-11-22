@@ -72,7 +72,12 @@ object EbookImporter {
                     val document = Jsoup.parse(html)
                     document.select("script,style,nav,head").remove()
                     val body = document.body()
+                    val blockTags = setOf("h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "blockquote")
                     val blocks = body.select("h1,h2,h3,h4,h5,h6,p,li,blockquote")
+                        // WHY: EPUBs often wrap paragraphs in list items or blockquotes; keep the outer block once.
+                        .filter { element ->
+                            element.parents().none { parent -> parent.tagName() in blockTags }
+                        }
                         .map { it.text().trim() }.filter { it.isNotBlank() }
                     val chapterText = (if (blocks.isNotEmpty()) blocks else listOf(body.text().trim()))
                         .filter { it.isNotBlank() }
