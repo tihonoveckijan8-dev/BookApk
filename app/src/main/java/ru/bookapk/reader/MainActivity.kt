@@ -986,8 +986,21 @@ private fun ReaderScreen(
                 if (book.annotations.isEmpty()) {
                     Text("Пока нет заметок. Удерживайте абзац в тексте, чтобы выделить его цветом и добавить комментарий.")
                 } else {
-                    LazyColumn(Modifier.heightIn(max = 390.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(book.annotations.sortedByDescending { it.createdAt }, key = { it.id }) { item ->
+                    Column {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            listOf("all" to "Все", "yellow" to "Жёлтые", "green" to "Зелёные", "blue" to "Синие", "pink" to "Розовые").forEach { (id, label) ->
+                                FilterChip(
+                                    selected = annotationFilter == id,
+                                    onClick = { annotationFilter = id },
+                                    label = { Text(label, fontSize = 10.sp) }
+                                )
+                            }
+                        }
+                        val filteredAnnotations = book.annotations
+                            .filter { annotationFilter == "all" || it.color == annotationFilter }
+                            .sortedByDescending { it.createdAt }
+                        LazyColumn(Modifier.heightIn(max = 340.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            items(filteredAnnotations, key = { it.id }) { item ->
                             val marker = when (item.color) {
                                 "green" -> Color(0xFF3CBF83)
                                 "blue" -> Color(0xFF4A91E8)
@@ -1019,6 +1032,17 @@ private fun ReaderScreen(
                                         Text(item.note, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .68f))
                                     }
                                     Text("Фрагмент ${item.position + 1}", fontSize = 10.sp, color = marker)
+                                }
+                                IconButton(onClick = {
+                                    pendingAnnotationPosition = item.position
+                                    pendingAnnotationOffset = item.offsetPx
+                                    editingAnnotationId = item.id
+                                    annotationNote = item.note
+                                    annotationColor = item.color
+                                    showAnnotations = false
+                                    showAnnotationDialog = true
+                                }) {
+                                    Icon(Icons.Rounded.Edit, contentDescription = "Редактировать заметку")
                                 }
                                 IconButton(onClick = { onRemoveAnnotation(item.id) }) {
                                     Icon(Icons.Rounded.DeleteOutline, contentDescription = "Удалить заметку", tint = MaterialTheme.colorScheme.error)
