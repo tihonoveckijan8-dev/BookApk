@@ -44,6 +44,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -274,18 +275,32 @@ private fun AppearanceScreen(
                 targetValue = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = if (id == "glass") .13f else .09f) else panel,
                 animationSpec = tween(300), label = "style-card-$id"
             )
-            val elevation by animateDpAsState(if (selected && id == "clay") 8.dp else if (selected) 3.dp else 0.dp, tween(300), label = "style-elevation-$id")
-            val radius by animateDpAsState(if (selected) 23.dp else 17.dp, tween(300), label = "style-radius-$id")
+            val elevation by animateDpAsState(
+                if (selected && id == "clay") 9.dp else if (selected) 3.dp else 0.dp,
+                tween(360), label = "style-elevation-$id"
+            )
+            val radius by animateDpAsState(if (selected) 24.dp else 17.dp, tween(360), label = "style-radius-$id")
+            val scale by animateFloatAsState(if (selected) 1f else .985f, tween(360), label = "style-scale-$id")
+            val outlineAlpha by animateFloatAsState(if (selected) 1f else 0f, tween(260), label = "style-outline-$id")
             Card(
                 onClick = { onChange(appearance.copy(visualStyle = id)) },
                 modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
-                    .then(if (selected && id == "glass") Modifier.border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .35f), RoundedCornerShape(radius)) else Modifier),
+                    .graphicsLayer { scaleX = scale; scaleY = scale }
+                    .then(
+                        if (id == "glass") Modifier.border(
+                            width = if (selected) 1.5.dp else 1.dp,
+                            color = Color.White.copy(alpha = if (selected) .95f else .58f),
+                            shape = RoundedCornerShape(radius)
+                        ) else Modifier
+                    ),
                 shape = RoundedCornerShape(radius),
                 colors = CardDefaults.cardColors(containerColor = container),
                 elevation = CardDefaults.cardElevation(defaultElevation = elevation),
-                border = if (selected && id != "glass") androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .28f)) else null
+                border = if (selected && id != "glass") androidx.compose.foundation.BorderStroke(
+                    1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .28f * outlineAlpha)
+                ) else null
             ) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.padding(horizontal = 15.dp, vertical = if (selected) 17.dp else 15.dp), verticalAlignment = Alignment.CenterVertically) {
                     ThemeSwatch(style = id, selected = selected)
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
@@ -351,16 +366,33 @@ private fun ThemeLivePreview(visualStyle: String) {
             else -> Teal
         }, tween(420), label = "preview-accent"
     )
+    val previewShape by animateDpAsState(
+        when (visualStyle) { "clay" -> 27.dp; "glass" -> 23.dp; else -> 17.dp },
+        tween(420), label = "preview-shape"
+    )
+    val previewElevation by animateDpAsState(
+        when (visualStyle) { "clay" -> 10.dp; "glass" -> 1.dp; else -> 0.dp },
+        tween(420), label = "preview-elevation"
+    )
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(if (clay) 26.dp else 20.dp),
+        shape = RoundedCornerShape(previewShape),
         colors = CardDefaults.cardColors(containerColor = container),
-        elevation = CardDefaults.cardElevation(if (clay) 8.dp else 2.dp),
-        border = if (glass) androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = .9f)) else null
+        elevation = CardDefaults.cardElevation(previewElevation),
+        border = when {
+            glass -> androidx.compose.foundation.BorderStroke(1.5.dp, Color.White.copy(alpha = .96f))
+            clay -> androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = .55f))
+            else -> null
+        }
     ) {
-        Column(Modifier.padding(17.dp)) {
+        Column(Modifier.padding(if (clay) 19.dp else 17.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(38.dp).clip(RoundedCornerShape(12.dp)).background(accent.copy(alpha = .13f)), contentAlignment = Alignment.Center) {
+                Box(
+                    Modifier.size(38.dp).clip(RoundedCornerShape(if (clay) 14.dp else 11.dp))
+                        .background(if (clay) Color(0xFFE1DED5) else accent.copy(alpha = if (glass) .10f else .13f))
+                        .then(if (glass) Modifier.border(1.dp, Color.White, RoundedCornerShape(11.dp)) else Modifier),
+                    contentAlignment = Alignment.Center
+                ) {
                     Text("М", color = accent, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 }
                 Spacer(Modifier.width(10.dp))
@@ -372,7 +404,18 @@ private fun ThemeLivePreview(visualStyle: String) {
             }
             Spacer(Modifier.height(15.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(43.dp, 56.dp).clip(RoundedCornerShape(8.dp)).background(accent.copy(alpha = .14f)), contentAlignment = Alignment.Center) {
+                Box(
+                    Modifier.size(43.dp, 56.dp).clip(RoundedCornerShape(if (clay) 11.dp else 7.dp))
+                        .background(
+                            when (visualStyle) {
+                                "clay" -> Color(0xFFDAD6CC)
+                                "glass" -> Color(0xBFFFFFFF)
+                                else -> accent.copy(alpha = .14f)
+                            }
+                        )
+                        .then(if (glass) Modifier.border(1.dp, Color.White, RoundedCornerShape(7.dp)) else Modifier),
+                    contentAlignment = Alignment.Center
+                ) {
                     Text("PDF", color = accent, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
                 }
                 Spacer(Modifier.width(12.dp))
@@ -404,10 +447,17 @@ private fun ThemeSwatch(style: String, selected: Boolean) {
         "glass" -> Color(0xFF315E66)
         else -> Teal
     }
+    val shape by animateDpAsState(if (selected) 18.dp else 13.dp, tween(280), label = "swatch-shape-$style")
     Box(
-        Modifier.size(50.dp).clip(RoundedCornerShape(if (selected) 17.dp else 13.dp))
-            .background(base)
-            .then(if (style == "glass") Modifier.border(1.dp, Color.White, RoundedCornerShape(13.dp)) else Modifier),
+        Modifier.size(50.dp).clip(RoundedCornerShape(shape))
+            .background(if (style == "glass") base.copy(alpha = .62f) else base)
+            .then(
+                when (style) {
+                    "glass" -> Modifier.border(1.5.dp, Color.White.copy(alpha = .95f), RoundedCornerShape(shape))
+                    "clay" -> Modifier.border(1.dp, Color.White.copy(alpha = .72f), RoundedCornerShape(shape))
+                    else -> Modifier
+                }
+            ),
         contentAlignment = Alignment.Center
     ) {
         Text("Aa", fontWeight = FontWeight.Bold, color = accent, fontSize = 17.sp)
