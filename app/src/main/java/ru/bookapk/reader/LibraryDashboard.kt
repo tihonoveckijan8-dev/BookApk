@@ -1,5 +1,7 @@
 package ru.bookapk.reader
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -57,8 +59,15 @@ fun LibraryDashboard(
     }
     val lastRead = books.filter { it.progress > 0 }.maxByOrNull { it.progress }
     val categoryLabel = { id: String -> categories.firstOrNull { it.id == id }?.name ?: "Без категории" }
-    val canvas = when (visualStyle) { "clay" -> Color(0xFFE8E5DE); "glass" -> Color(0xFFEAF1F2); else -> LibraryCanvas }
-    val cardSurface = when (visualStyle) { "clay" -> Color(0xFFECE9E1); "glass" -> Color(0xDDFBFFFF); else -> Color.White }
+    // WHY: keep the library visually continuous while the selected appearance changes.
+    val canvasTarget = when (visualStyle) { "clay" -> Color(0xFFE8E5DE); "glass" -> Color(0xFFEAF1F2); else -> LibraryCanvas }
+    val cardTarget = when (visualStyle) { "clay" -> Color(0xFFECE9E1); "glass" -> Color(0xDDFBFFFF); else -> Color.White }
+    val canvas by animateColorAsState(canvasTarget, tween(440), label = "library-canvas")
+    val cardSurface by animateColorAsState(cardTarget, tween(380), label = "library-cards")
+    val accent by animateColorAsState(
+        when (visualStyle) { "clay" -> Color(0xFF426D68); "glass" -> Color(0xFF376F78); else -> accent },
+        tween(420), label = "library-accent"
+    )
 
     Column(
         Modifier.fillMaxSize().background(canvas).statusBarsPadding()
@@ -73,7 +82,7 @@ fun LibraryDashboard(
             IconButton(onClick = onSettings) { Icon(Icons.Rounded.Settings, contentDescription = "Настройки оформления", tint = LibraryMuted) }
             FilledIconButton(
                 onClick = onImport,
-                colors = IconButtonDefaults.filledIconButtonColors(containerColor = LibraryTeal)
+                colors = IconButtonDefaults.filledIconButtonColors(containerColor = accent)
             ) { Icon(Icons.Rounded.Add, contentDescription = "Добавить книгу", tint = Color.White) }
         }
         Spacer(Modifier.height(18.dp))
@@ -86,7 +95,7 @@ fun LibraryDashboard(
             leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = "Поиск") },
             shape = RoundedCornerShape(18.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = LibraryTeal,
+                focusedBorderColor = accent,
                 unfocusedBorderColor = if (visualStyle == "glass") Color.White.copy(alpha = .8f) else Color(0xFFE5E6E0),
                 focusedContainerColor = cardSurface,
                 unfocusedContainerColor = cardSurface
@@ -113,13 +122,13 @@ fun LibraryDashboard(
             FilledTonalIconButton(
                 onClick = { showCategoryDialog = true },
                 modifier = Modifier.size(38.dp),
-                colors = IconButtonDefaults.filledTonalIconButtonColors(contentColor = LibraryTeal)
+                colors = IconButtonDefaults.filledTonalIconButtonColors(contentColor = accent)
             ) { Icon(Icons.Rounded.FolderOpen, contentDescription = "Управление категориями") }
         }
 
         if (lastRead != null && query.isBlank() && selectedCategory == null) {
             Spacer(Modifier.height(16.dp))
-            Text("ВОЗВРАЩАЙТЕСЬ К ЧТЕНИЮ", fontSize = 10.sp, letterSpacing = 1.3.sp, fontWeight = FontWeight.Bold, color = LibraryTeal)
+            Text("ВОЗВРАЩАЙТЕСЬ К ЧТЕНИЮ", fontSize = 10.sp, letterSpacing = 1.3.sp, fontWeight = FontWeight.Bold, color = accent)
             Spacer(Modifier.height(8.dp))
             Card(
                 onClick = { onOpen(lastRead) },
@@ -131,7 +140,7 @@ fun LibraryDashboard(
                     Box(
                         Modifier.size(54.dp, 68.dp).background(if (visualStyle == "clay") Color(0xFFD7D3CA) else Color(0xFFC7E2D9), RoundedCornerShape(10.dp)),
                         contentAlignment = Alignment.Center
-                    ) { Icon(Icons.Rounded.AutoStories, null, tint = LibraryTeal, modifier = Modifier.size(27.dp)) }
+                    ) { Icon(Icons.Rounded.AutoStories, null, tint = accent, modifier = Modifier.size(27.dp)) }
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
                         Text(lastRead.title, fontWeight = FontWeight.Bold, color = LibraryInk, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -140,7 +149,7 @@ fun LibraryDashboard(
                         LinearProgressIndicator(
                             progress = { (lastRead.progress / 100f).coerceIn(0f, 1f) },
                             modifier = Modifier.fillMaxWidth().height(5.dp),
-                            color = LibraryTeal,
+                            color = accent,
                             trackColor = Color(0xFFC9DDD5)
                         )
                     }
@@ -163,7 +172,7 @@ fun LibraryDashboard(
                     Text(if (books.isEmpty()) "Ваша библиотека пока пуста" else "В этой категории пока нет книг", color = LibraryInk, fontWeight = FontWeight.SemiBold)
                     Text("Добавьте PDF или TXT с устройства", color = LibraryMuted, fontSize = 13.sp)
                     Spacer(Modifier.height(15.dp))
-                    Button(onClick = onImport, colors = ButtonDefaults.buttonColors(containerColor = LibraryTeal)) { Text("Добавить книгу") }
+                    Button(onClick = onImport, colors = ButtonDefaults.buttonColors(containerColor = accent)) { Text("Добавить книгу") }
                 }
             }
         } else {
@@ -192,7 +201,7 @@ fun LibraryDashboard(
                                 ),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(book.type.uppercase(), color = LibraryTeal, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
+                                Text(book.type.uppercase(), color = accent, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
                             }
                             Spacer(Modifier.width(13.dp))
                             Column(
@@ -206,7 +215,7 @@ fun LibraryDashboard(
                                     LinearProgressIndicator(
                                         progress = { (book.progress / 100f).coerceIn(0f, 1f) },
                                         modifier = Modifier.fillMaxWidth().height(4.dp),
-                                        color = LibraryTeal
+                                        color = accent
                                     )
                                 }
                             }
