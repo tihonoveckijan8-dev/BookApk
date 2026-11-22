@@ -95,12 +95,11 @@ object EbookImporter {
             ?: throw IllegalStateException("Не удалось открыть FB2-файл.")
         val parser = Xml.newPullParser()
         parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
-        parser.setInput(input, "UTF-8")
+        parser.setInput(input, null)
         val result = StringBuilder()
         var inBody = false
         var skipBody = false
         var sectionDepth = 0
-        var chapterNumber = 0
 
         while (parser.eventType != XmlPullParser.END_DOCUMENT) {
             when (parser.eventType) {
@@ -113,7 +112,6 @@ object EbookImporter {
                         }
                         "section" -> if (inBody && !skipBody) {
                             sectionDepth++
-                            chapterNumber++
                         }
                         "title" -> if (inBody && !skipBody && sectionDepth > 0) {
                             val title = readElementText(parser)
