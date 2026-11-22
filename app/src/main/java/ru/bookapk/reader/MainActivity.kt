@@ -71,6 +71,12 @@ private fun BookApkApp() {
     var showCategoryDialog by remember { mutableStateOf(false) }
     var categoryDraft by remember { mutableStateOf("") }
     var categoryTargetBook by remember { mutableStateOf<Book?>(null) }
+    var sortOrder by remember { mutableStateOf("recent") }
+    var showSortMenu by remember { mutableStateOf(false) }
+    var showManageCategories by remember { mutableStateOf(false) }
+    var categoryToRename by remember { mutableStateOf<String?>(null) }
+    var renameDraft by remember { mutableStateOf("") }
+    var categoryToDelete by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -88,6 +94,35 @@ private fun BookApkApp() {
         books = updated
         categoryTargetBook = null
         scope.launch(Dispatchers.IO) { store.save(updated) }
+    }
+
+    fun renameCategory(oldName: String, newName: String) {
+        val cleanName = newName.trim()
+        if (cleanName.isBlank()) return
+        val updatedCategories = categories.map { if (it == oldName) cleanName else it }
+            .distinctBy { it.lowercase() }.sortedBy { it.lowercase() }
+        val updatedBooks = books.map { if (it.category == oldName) it.copy(category = cleanName) else it }
+        categories = updatedCategories
+        books = updatedBooks
+        if (selectedCategory == oldName) selectedCategory = cleanName
+        // WHY: update the category catalog and every linked book together to avoid orphaned folder labels.
+        scope.launch(Dispatchers.IO) {
+            store.saveCategories(updatedCategories)
+            store.save(updatedBooks)
+        }
+    }
+
+    fun deleteCategory(category: String) {
+        val updatedCategories = categories.filterNot { it == category }
+        val updatedBooks = books.map { if (it.category == category) it.copy(category = "") else it }
+        categories = updatedCategories
+        books = updatedBooks
+        if (selectedCategory == category) selectedCategory = null
+        // WHY: removing a category returns its books to the main library; no files or reading progress are deleted.
+        scope.launch(Dispatchers.IO) {
+            store.saveCategories(updatedCategories)
+            store.save(updatedBooks)
+        }
     }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
@@ -165,7 +200,8 @@ private fun BookApkApp() {
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(if (showFavorites) "Избранное" else "Все книги", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                        TextButton(onClick = { showCategoryDialog = true }) { Text("Категории +") }
+                        TextButton(onClick = { showManageCategories = true }) { Text("Папки") }
+                        TextButton(onClick = { showCategoryDialog = true }) { Text("＋") }
                         TextButton(onClick = { showFavorites = !showFavorites }) {
                             Icon(if (showFavorites) Icons.Rounded.Book else Icons.Rounded.FavoriteBorder, contentDescription = null, modifier = Modifier.size(17.dp))
                             Spacer(Modifier.width(5.dp))
@@ -186,7 +222,7 @@ private fun BookApkApp() {
                                 FilterChip(
                                     selected = selectedCategory == category,
                                     onClick = { selectedCategory = if (selectedCategory == category) null else category },
-                                    label = { Text(category) }
+                                    label = { Text("$category · ${books.count { it.category == category }}") }
                                 )
                             }
                         }
@@ -197,6 +233,44 @@ private fun BookApkApp() {
                         it.title.contains(query, ignoreCase = true) &&
                             (!showFavorites || it.isFavorite) &&
                             (selectedCategory == null || it.category == selectedCategory)
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("${filtered.size} книг", color = Color(0xFF7A837D), fontSize = 12.sp, modifier = Modifier.weight(1f))
+                        Box {
+                            TextButton(onClick = { showSortMenu = true }) {
+                                Text(
+                                    when (sortOrder) {
+                                        "title" -> "По названию"
+                                        "progress" -> "По прогрессу"
+                                        else -> "Сначала новые"
+                                    },
+                                    fontSize = 12.sp
+                                )
+                            }
+                            DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("Сначала новые") },
+                                    onClick = { sortOrder = "recent"; showSortMenu = false }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("По названию") },
+                                    onClick = { sortOrder = "title"; showSortMenu = false }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("По прогрессу") },
+                                    onClick = { sortOrder = "progress"; showSortMenu = false }
+                                )
+                            }
+                        }
+                    }
+                    val sortedBooks = when (sortOrder) {
+                        "title" -> filtered.sortedBy { it.title.lowercase() }
+                        "progress" -> filtered.sortedByDescending { it.progress }
+                        else -> filtered.sortedByDescending { it.addedAt }
                     }
                     if (filtered.isEmpty()) {
                         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -212,7 +286,7 @@ private fun BookApkApp() {
                         }
                     } else {
                         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 100.dp)) {
-                            items(filtered, key = { it.id }) { book ->
+                            items(sortedBooks, key = { it.id }) { book ->
                                 Card(
                                     modifier = Modifier.fillMaxWidth().clickable { activeBook = book },
                                     shape = RoundedCornerShape(18.dp),
@@ -227,7 +301,15 @@ private fun BookApkApp() {
                                             Text(book.title, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                             Text(if (book.type == "pdf") "Документ PDF" else "Текстовая книга", color = Color.Gray, fontSize = 13.sp)
                                             if (book.category.isNotBlank()) Text(book.category, color = Teal, fontSize = 12.sp)
-                                            if (book.progress > 0) Text("Прогресс: ${book.progress}%", color = Teal, fontSize = 12.sp)
+                                            if (book.progress > 0) {
+                                                Text("Прочитано · ${book.progress}%", color = Teal, fontSize = 11.sp)
+                                                LinearProgressIndicator(
+                                                    progress = { (book.progress / 100f).coerceIn(0f, 1f) },
+                                                    modifier = Modifier.fillMaxWidth().padding(top = 5.dp).height(4.dp),
+                                                    color = Teal,
+                                                    trackColor = Color(0xFFE4ECE8)
+                                                )
+                                            }
                                         }
                                         IconButton(onClick = {
                                             val updated = books.map { item -> if (item.id == book.id) item.copy(isFavorite = !item.isFavorite) else item }
@@ -302,6 +384,91 @@ private fun BookApkApp() {
                 }) { Text("Создать") }
             },
             dismissButton = { TextButton(onClick = { showCategoryDialog = false; categoryDraft = "" }) { Text("Отмена") } }
+        )
+    }
+    if (showManageCategories) {
+        AlertDialog(
+            onDismissRequest = { showManageCategories = false },
+            title = { Text("Мои папки") },
+            text = {
+                if (categories.isEmpty()) {
+                    Text("Пока нет категорий. Создайте первую с помощью кнопки ＋.")
+                } else {
+                    Column(
+                        modifier = Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        categories.forEach { category ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(category, fontWeight = FontWeight.Medium)
+                                    Text("${books.count { it.category == category }} книг", color = Color.Gray, fontSize = 11.sp)
+                                }
+                                TextButton(onClick = {
+                                    categoryToRename = category
+                                    renameDraft = category
+                                    showManageCategories = false
+                                }) { Text("Изменить") }
+                                TextButton(onClick = {
+                                    categoryToDelete = category
+                                    showManageCategories = false
+                                }) { Text("Удалить", color = Color(0xFFB94A55)) }
+                            }
+                            HorizontalDivider(color = Color(0xFFECEEEA))
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showManageCategories = false }) { Text("Готово") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showManageCategories = false; showCategoryDialog = true }) { Text("＋ Создать") }
+            }
+        )
+    }
+    categoryToRename?.let { oldName ->
+        AlertDialog(
+            onDismissRequest = { categoryToRename = null; renameDraft = "" },
+            title = { Text("Переименовать папку") },
+            text = {
+                OutlinedTextField(
+                    value = renameDraft,
+                    onValueChange = { renameDraft = it.take(32) },
+                    singleLine = true,
+                    label = { Text("Новое название") }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val newName = renameDraft.trim()
+                    val duplicate = categories.any { it != oldName && it.equals(newName, ignoreCase = true) }
+                    if (newName.isNotBlank() && !duplicate) renameCategory(oldName, newName)
+                    categoryToRename = null
+                    renameDraft = ""
+                    showManageCategories = true
+                }) { Text("Сохранить") }
+            },
+            dismissButton = {
+                TextButton(onClick = { categoryToRename = null; renameDraft = ""; showManageCategories = true }) { Text("Отмена") }
+            }
+        )
+    }
+    categoryToDelete?.let { category ->
+        AlertDialog(
+            onDismissRequest = { categoryToDelete = null; showManageCategories = true },
+            title = { Text("Удалить папку?") },
+            text = { Text("Книги останутся в библиотеке, а категория «$category» будет снята с них.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    deleteCategory(category)
+                    categoryToDelete = null
+                    showManageCategories = true
+                }) { Text("Удалить", color = Color(0xFFB94A55)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { categoryToDelete = null; showManageCategories = true }) { Text("Отмена") }
+            }
         )
     }
     categoryTargetBook?.let { target ->
