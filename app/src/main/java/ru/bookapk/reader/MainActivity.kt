@@ -186,7 +186,12 @@ private fun BookApkApp() {
                     onImport = { picker.launch(arrayOf("application/pdf", "text/plain")) },
                     onSettings = { showSettings = true },
                     visualStyle = appearance.visualStyle,
-                    onOpen = { activeBook = it },
+                    onOpen = { book ->
+                        val openedAt = System.currentTimeMillis()
+                        val updated = books.map { if (it.id == book.id) it.copy(lastOpenedAt = openedAt) else it }
+                        persistBooks(updated)
+                        activeBook = updated.firstOrNull { it.id == book.id }
+                    },
                     onCategoryCreate = { category ->
                         categories = categories + category
                         scope.launch(Dispatchers.IO) { store.saveCategories(categories) }
@@ -213,7 +218,7 @@ private fun BookApkApp() {
                     onBack = { activeBook = null },
                     onPosition = { position, progress ->
                         val updated = books.map {
-                            if (it.id == activeBook!!.id) it.copy(readingPosition = position, progress = progress) else it
+                            if (it.id == activeBook!!.id) it.copy(readingPosition = position, progress = progress, lastOpenedAt = System.currentTimeMillis()) else it
                         }
                         persistBooks(updated)
                         activeBook = updated.firstOrNull { it.id == activeBook!!.id }
