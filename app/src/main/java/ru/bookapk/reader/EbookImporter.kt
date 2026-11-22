@@ -304,7 +304,7 @@ object EbookImporter {
         extracted: MutableMap<String, String>
     ): String? {
         return runCatching {
-            val reference = URI(source)
+            val reference = URI(source.replace(" ", "%20"))
             if (reference.isAbsolute || reference.rawAuthority != null) return@runCatching null
             val resolved = URI(chapterPath).resolve(reference).normalize()
             val path = resolved.path.removePrefix("/")
