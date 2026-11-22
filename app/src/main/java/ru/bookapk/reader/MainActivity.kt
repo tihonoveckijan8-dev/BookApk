@@ -185,7 +185,7 @@ private fun BookApkApp() {
                             } else null
                         } ?: "Новая книга"
                         val ext = name.substringAfterLast('.', "").lowercase()
-                        require(ext == "pdf" || ext == "txt") { "Поддерживаются только PDF и TXT." }
+                        require(ext in setOf("pdf", "txt", "epub", "fb2")) { "Поддерживаются PDF, TXT, EPUB и FB2." }
                         val target = File(context.filesDir, "books").apply { mkdirs() }
                         val destination = File(target, "${UUID.randomUUID()}.$ext")
                         context.contentResolver.openInputStream(uri)?.use { input ->
@@ -323,10 +323,10 @@ private fun BookApkApp() {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Icon(Icons.Rounded.Book, null, tint = Teal, modifier = Modifier.size(52.dp))
                                 Spacer(Modifier.height(12.dp))
-                                Text(if (books.isEmpty()) "Добавьте PDF или TXT, чтобы начать читать" else "Ничего не найдено", color = Color(0xFF6F7771))
+                                Text(if (books.isEmpty()) "Добавьте PDF, TXT, EPUB или FB2, чтобы начать читать" else "Ничего не найдено", color = Color(0xFF6F7771))
                                 if (books.isEmpty()) {
                                     Spacer(Modifier.height(14.dp))
-                                    Button(onClick = { picker.launch(arrayOf("application/pdf", "text/plain")) }) { Text("Добавить книгу") }
+                                    Button(onClick = { picker.launch(arrayOf("*/*")) }) { Text("Добавить книгу") }
                                 }
                             }
                         }
@@ -340,12 +340,12 @@ private fun BookApkApp() {
                                 ) {
                                     Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                                         Box(Modifier.size(54.dp, 70.dp).background(if (book.type == "pdf") Color(0xFFE3E9E7) else Color(0xFFD9EEE8), RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
-                                            Text(if (book.type == "pdf") "PDF" else "TXT", color = Teal, fontWeight = FontWeight.Bold)
+                                            Text(book.type.uppercase(), color = Teal, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                         }
                                         Spacer(Modifier.width(14.dp))
                                         Column(Modifier.weight(1f)) {
                                             Text(book.title, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                            Text(if (book.type == "pdf") "Документ PDF" else "Текстовая книга", color = Color.Gray, fontSize = 13.sp)
+                                            Text(when (book.type) { "pdf" -> "Документ PDF"; "epub" -> "Электронная книга EPUB"; "fb2" -> "Книга FictionBook"; else -> "Текстовая книга" }, color = Color.Gray, fontSize = 13.sp)
                                             if (book.category.isNotBlank()) Text(book.category, color = Teal, fontSize = 12.sp)
                                             if (book.progress > 0) {
                                                 Text("Прочитано · ${book.progress}%", color = Teal, fontSize = 11.sp)
@@ -634,8 +634,15 @@ private fun ReaderScreen(
     LaunchedEffect(book.id) {
         loading = true
         try {
-            if (book.type == "txt") {
-                text = withContext(Dispatchers.IO) { File(book.path).readText(Charsets.UTF_8) }
+            if (book.type != "pdf") {
+                text = withContext(Dispatchers.IO) {
+                    when (book.type) {
+                        "txt" -> File(book.path).readText(Charsets.UTF_8)
+                        "epub" -> BookTextExtractor.readEpub(File(book.path))
+                        "fb2" -> BookTextExtractor.readFb2(File(book.path))
+                        else -> error("Формат книги не поддерживается.")
+                    }
+                }
             } else {
                 pageCount = withContext(Dispatchers.IO) {
                     val fd = android.os.ParcelFileDescriptor.open(
@@ -659,7 +666,7 @@ private fun ReaderScreen(
 
     fun jumpTo(position: Int) {
         scope.launch {
-            if (book.type == "txt") {
+            if (book.type != "pdf") {
                 val total = txtListState.layoutInfo.totalItemsCount
                 if (total > 0) {
                     txtListState.animateScrollToItem(position.coerceIn(0, total - 1))
@@ -757,7 +764,7 @@ private fun ReaderScreen(
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Teal)
             }
-        } else if (book.type == "txt") {
+        } else if (book.type != "pdf") {
             val paragraphs = remember(text) {
                 (text ?: "").split(Regex("\\n\\s*\\n")).filter { it.isNotBlank() }
                     .ifEmpty { listOf(text ?: "") }
