@@ -40,6 +40,7 @@ data class Book(
     val progress: Int = 0,
     val categoryId: String = "",
     val readingPosition: Int = 0,
+    val readingOffsetPx: Int = 0,
     val bookmarkPosition: Int = -1,
     val isFavorite: Boolean = false,
     val lastOpenedAt: Long = 0L,
@@ -51,7 +52,7 @@ data class Book(
         return JSONObject()
             .put("id", id).put("title", title).put("path", path).put("type", type)
             .put("progress", progress).put("categoryId", categoryId)
-            .put("readingPosition", readingPosition).put("bookmarkPosition", bookmarkPosition)
+            .put("readingPosition", readingPosition).put("readingOffsetPx", readingOffsetPx).put("bookmarkPosition", bookmarkPosition)
             .put("isFavorite", isFavorite).put("lastOpenedAt", lastOpenedAt)
             .put("bookmarks", bookmarkArray)
     }
@@ -77,6 +78,7 @@ data class Book(
                 progress = json.optInt("progress", 0),
                 categoryId = json.optString("categoryId", ""),
                 readingPosition = json.optInt("readingPosition", 0),
+                readingOffsetPx = json.optInt("readingOffsetPx", 0).coerceAtLeast(0),
                 bookmarkPosition = legacyPosition,
                 isFavorite = json.optBoolean("isFavorite", false),
                 lastOpenedAt = json.optLong("lastOpenedAt", 0L),
