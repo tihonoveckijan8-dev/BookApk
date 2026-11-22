@@ -92,7 +92,8 @@ data class Book(
     val lastOpenedAt: Long = 0L,
     val bookmarks: List<ReaderBookmark> = emptyList(),
     val annotations: List<ReaderAnnotation> = emptyList(),
-    val author: String = ""
+    val author: String = "",
+    val coverPath: String = ""
 ) {
     fun toJson(): JSONObject {
         val bookmarkArray = JSONArray()
@@ -107,6 +108,7 @@ data class Book(
             .put("bookmarks", bookmarkArray)
             .put("annotations", annotationArray)
             .put("author", author)
+            .put("coverPath", coverPath)
     }
 
     companion object {
@@ -140,7 +142,8 @@ data class Book(
                 lastOpenedAt = json.optLong("lastOpenedAt", 0L),
                 bookmarks = bookmarks,
                 annotations = annotations,
-                author = json.optString("author", "")
+                author = json.optString("author", ""),
+                coverPath = json.optString("coverPath", "")
             )
         }
     }
