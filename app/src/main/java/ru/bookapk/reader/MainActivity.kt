@@ -529,12 +529,13 @@ private fun ReaderScreen(
     onError: (String) -> Unit
 ) {
     val context = LocalContext.current
-    var text by remember(book.id) { mutableStateOf<String?>(null) }
+    var txtDocument by remember(book.id) { mutableStateOf(TxtDocument(emptyList(), emptyList())) }
     var fontSize by remember(book.id) { mutableFloatStateOf(readerFontSize) }
     var lineSpacing by remember(book.id) { mutableFloatStateOf(readerLineSpacing) }
     var activeReaderTheme by remember(book.id) { mutableStateOf(readerTheme) }
     var showReaderSettings by remember { mutableStateOf(false) }
     var showBookmarks by remember { mutableStateOf(false) }
+    var showContents by remember { mutableStateOf(false) }
     var showBookmarkDialog by remember { mutableStateOf(false) }
     var bookmarkTitle by remember { mutableStateOf("") }
     var pageCount by remember { mutableIntStateOf(0) }
@@ -551,7 +552,7 @@ private fun ReaderScreen(
         loading = true
         try {
             if (book.type == "txt") {
-                text = withContext(Dispatchers.IO) { File(book.path).readText(Charsets.UTF_8) }
+                txtDocument = withContext(Dispatchers.IO) { TxtBookParser.parse(File(book.path).readText(Charsets.UTF_8)) }
             } else {
                 pageCount = withContext(Dispatchers.IO) {
                     val fd = android.os.ParcelFileDescriptor.open(File(book.path), android.os.ParcelFileDescriptor.MODE_READ_ONLY)
@@ -563,9 +564,14 @@ private fun ReaderScreen(
         finally { loading = false }
     }
 
-    val paragraphs = remember(text) {
-        (text ?: "").split(Regex("\\n\\s*\\n")).filter { it.isNotBlank() }.ifEmpty { listOf(text ?: "") }
+    LaunchedEffect(book.id, txtDocument.paragraphs.size) {
+        if (book.type == "txt" && txtDocument.paragraphs.isNotEmpty()) {
+            listState.scrollToItem(book.readingPosition.coerceIn(0, txtDocument.paragraphs.lastIndex))
+        }
     }
+
+    val paragraphs = txtDocument.paragraphs
+    val chapterStarts = remember(txtDocument) { txtDocument.chapters.associateBy { it.startParagraph } }
     val currentTextPosition by remember { derivedStateOf { listState.firstVisibleItemIndex } }
     val savedPosition = if (book.type == "pdf") page else currentTextPosition
     val readerBackground = when (activeReaderTheme) {
@@ -587,8 +593,9 @@ private fun ReaderScreen(
             IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, contentDescription = "Назад") }
             Column(Modifier.weight(1f)) {
                 Text(book.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(if (book.type == "pdf") "Страница ${page + 1} из $pageCount" else "Текстовая книга", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .58f))
+                Text(if (book.type == "pdf") "Страница ${page + 1} из $pageCount" else "Текстовая книга · ${paragraphs.size} фрагм.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .58f))
             }
+            if (book.type == "txt") TextButton(onClick = { showContents = true }) { Text("Оглавление", fontSize = 12.sp) }
             IconButton(onClick = { showBookmarks = true }) {
                 Icon(Icons.Rounded.Bookmarks, contentDescription = "Все закладки", tint = MaterialTheme.colorScheme.primary)
             }
@@ -607,9 +614,10 @@ private fun ReaderScreen(
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         } else if (book.type == "txt") {
             Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Размер текста", fontSize = 12.sp, color = readerForeground.copy(alpha = .68f))
+                Text("Чтение", fontSize = 12.sp, color = readerForeground.copy(alpha = .68f))
                 Text("${fontSize.toInt()} pt", fontSize = 12.sp, color = readerForeground)
                 Spacer(Modifier.weight(1f))
+                TextButton(onClick = { showContents = true }) { Text("Главы") }
                 TextButton(onClick = { showReaderSettings = true }) { Text("Настроить") }
             }
             LazyColumn(
@@ -618,7 +626,15 @@ private fun ReaderScreen(
                 contentPadding = PaddingValues(start = 26.dp, end = 26.dp, top = 24.dp, bottom = 70.dp)
             ) {
                 items(paragraphs.size) { index ->
-                    Text(paragraphs[index], fontSize = fontSize.sp, lineHeight = (fontSize * lineSpacing).sp, color = readerForeground, modifier = Modifier.padding(bottom = 19.dp))
+                    val chapter = chapterStarts[index]
+                    Text(
+                        paragraphs[index],
+                        fontSize = if (chapter != null) (fontSize + 4).sp else fontSize.sp,
+                        lineHeight = (fontSize * lineSpacing).sp,
+                        fontWeight = if (chapter != null) FontWeight.Bold else FontWeight.Normal,
+                        color = readerForeground,
+                        modifier = Modifier.padding(top = if (chapter != null) 22.dp else 0.dp, bottom = 19.dp)
+                    )
                 }
             }
             LaunchedEffect(listState.firstVisibleItemIndex, paragraphs.size) {
@@ -772,6 +788,27 @@ private fun ReaderScreen(
             dismissButton = {
                 TextButton(onClick = { showBookmarkDialog = false }) { Text("Отмена") }
             }
+        )
+    }
+
+    if (showContents) {
+        AlertDialog(
+            onDismissRequest = { showContents = false },
+            title = { Text("Оглавление") },
+            text = {
+                LazyColumn(Modifier.heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    items(txtDocument.chapters) { chapter ->
+                        TextButton(
+                            onClick = {
+                                readerScope.launch { listState.animateScrollToItem(chapter.startParagraph.coerceIn(0, (paragraphs.size - 1).coerceAtLeast(0))) }
+                                showContents = false
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(chapter.title, modifier = Modifier.fillMaxWidth(), maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showContents = false }) { Text("Закрыть") } }
         )
     }
 
