@@ -385,6 +385,7 @@ private fun BookApkApp() {
                         scope.launch(Dispatchers.IO) {
                             runCatching { File(book.path).delete() }
                             if (book.coverPath.isNotBlank()) runCatching { File(book.coverPath).delete() }
+                            if (book.imageDirectoryPath.isNotBlank()) runCatching { File(book.imageDirectoryPath).deleteRecursively() }
                         }
                     },
                     onBookFavoriteChange = { book ->
