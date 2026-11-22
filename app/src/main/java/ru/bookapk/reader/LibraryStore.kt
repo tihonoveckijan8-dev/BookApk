@@ -66,4 +66,27 @@ class LibraryStore(private val context: Context) {
             it[READER_THEME_KEY] = appearance.readerTheme
         }
     }
+
+    suspend fun saveBackupState(
+        books: List<Book>,
+        categories: List<BookCategory>,
+        appearance: ReaderAppearance
+    ) {
+        val bookArray = JSONArray()
+        books.forEach { bookArray.put(it.toJson()) }
+        val categoryArray = JSONArray()
+        categories.forEach { categoryArray.put(category.toJson()) }
+
+        // WHY: restore the complete library in one DataStore transaction, so metadata cannot be half-restored.
+        context.dataStore.edit { preferences ->
+            preferences[LIBRARY_KEY] = bookArray.toString()
+            preferences[CATEGORIES_KEY] = categoryArray.toString()
+            preferences[VISUAL_STYLE_KEY] = appearance.visualStyle
+            preferences[ICON_STYLE_KEY] = appearance.iconStyle
+            preferences[READER_FONT_SIZE_KEY] = appearance.readerFontSize
+            preferences[READER_LINE_SPACING_KEY] = appearance.readerLineSpacing
+            preferences[READER_THEME_KEY] = appearance.readerTheme
+        }
+    }
+
 }
