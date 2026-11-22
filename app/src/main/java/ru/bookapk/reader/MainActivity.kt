@@ -1043,6 +1043,11 @@ private fun ReaderScreen(
         )
     }
 
+    val reviewNow = System.currentTimeMillis()
+    val dueReviewCount = book.annotations.count {
+        it.lastReviewedAt == 0L || it.nextReviewAt <= reviewNow
+    }
+
     if (showAnnotations) {
         AlertDialog(
             onDismissRequest = { showAnnotations = false },
@@ -1062,7 +1067,7 @@ private fun ReaderScreen(
                             enabled = book.annotations.isNotEmpty(),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Карточки для повторения · ${book.annotations.size}")
+                            Text("Повторить сегодня · $dueReviewCount из ${book.annotations.size}")
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             listOf("all" to "Все", "yellow" to "Жёлтые", "green" to "Зелёные", "blue" to "Синие", "pink" to "Розовые").forEach { (id, label) ->
@@ -1196,9 +1201,10 @@ private fun ReaderScreen(
     }
 
     if (showStudyCards) {
-        val studyCards = book.annotations.sortedWith(
-            compareBy<ReaderAnnotation> { it.position }.thenBy { it.createdAt }
-        )
+        // WHY: only new and due cards enter today's session; future cards stay scheduled.
+        val studyCards = book.annotations
+            .filter { it.lastReviewedAt == 0L || it.nextReviewAt <= reviewNow }
+            .sortedWith(compareBy<ReaderAnnotation> { it.position }.thenBy { it.createdAt })
         if (studyCards.isNotEmpty()) {
             val safeIndex = studyCardIndex.coerceIn(0, studyCards.lastIndex)
             val card = studyCards[safeIndex]
@@ -1292,12 +1298,9 @@ private fun ReaderScreen(
                                                         nextReviewAt = reviewedAt + 10L * 60L * 1000L
                                                     )
                                                 )
-                                                if (safeIndex == studyCards.lastIndex) {
-                                                    showStudyCards = false
-                                                } else {
-                                                    studyCardIndex = safeIndex + 1
-                                                    studyCardRevealed = false
-                                                }
+                                                // WHY: the reviewed card leaves today's due queue; show the next due card at index zero.
+                                                studyCardIndex = 0
+                                                studyCardRevealed = false
                                             }
                                         ) { Text("Повторить") }
                                         Button(
@@ -1362,11 +1365,23 @@ private fun ReaderScreen(
                 }
             )
         } else {
+            val nextReviewAt = book.annotations
+                .map { it.nextReviewAt }
+                .filter { it > reviewNow }
+                .minOrNull()
+            val nextReviewLabel = nextReviewAt?.let {
+                SimpleDateFormat("dd.MM.yyyy в HH:mm", Locale.getDefault()).format(Date(it))
+            }
             AlertDialog(
                 onDismissRequest = { showStudyCards = false },
-                title = { Text("Повторение") },
-                text = { Text("Пока нет сохранённых выделений для повторения.") },
-                confirmButton = { TextButton(onClick = { showStudyCards = false }) { Text("Закрыть") } }
+                title = { Text("На сегодня всё") },
+                text = {
+                    Text(
+                        nextReviewLabel?.let { "Все доступные карточки повторены. Следующая станет доступна $it." }
+                            ?: "Все карточки повторены. Новых карточек пока нет."
+                    )
+                },
+                confirmButton = { TextButton(onClick = { showStudyCards = false }) { Text("Готово") } }
             )
         }
     }
