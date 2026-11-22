@@ -1,5 +1,7 @@
 package ru.bookapk.reader
 
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -28,11 +30,16 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.util.UUID
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 private val LibraryTeal = Color(0xFF087F78)
 private val LibraryInk = Color(0xFF202522)
@@ -186,10 +193,7 @@ fun LibraryDashboard(
                 colors = CardDefaults.cardColors(containerColor = if (visualStyle == "classic") Color(0xFFE2F0EC) else cardSurface)
             ) {
                 Row(Modifier.padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier.size(54.dp, 68.dp).background(if (visualStyle == "clay") Color(0xFFD7D3CA) else Color(0xFFC7E2D9), RoundedCornerShape(10.dp)),
-                        contentAlignment = Alignment.Center
-                    ) { Icon(Icons.Rounded.AutoStories, null, tint = accent, modifier = Modifier.size(27.dp)) }
+                    BookCover(lastRead, accent, Modifier.size(54.dp, 68.dp))
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
                         Text(lastRead.title, fontWeight = FontWeight.Bold, color = LibraryInk, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -267,15 +271,7 @@ fun LibraryDashboard(
                             Modifier.padding(start = 12.dp, end = 7.dp, top = 12.dp, bottom = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Box(
-                                Modifier.size(54.dp, 70.dp).background(
-                                    if (book.type == "pdf") Color(0xFFECE8DE) else Color(0xFFDDEFE9),
-                                    RoundedCornerShape(9.dp)
-                                ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(book.type.uppercase(), color = accent, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
-                            }
+                            BookCover(book, accent, Modifier.size(54.dp, 70.dp))
                             Spacer(Modifier.width(13.dp))
                             Column(
                                 Modifier.weight(1f).clickable { onOpen(book) }
@@ -370,5 +366,51 @@ fun LibraryDashboard(
             },
             dismissButton = { TextButton(onClick = { showCategoryDialog = false; categoryName = "" }) { Text("Готово") } }
         )
+    }
+}
+
+
+@Composable
+private fun BookCover(book: Book, accent: Color, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(9.dp)
+    val bitmap by produceState<android.graphics.Bitmap?>(initialValue = null, key1 = book.coverPath) {
+        value = withContext(Dispatchers.IO) {
+            val path = book.coverPath
+            if (path.isBlank()) null else runCatching {
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(path, bounds)
+                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
+                var sampleSize = 1
+                while (bounds.outWidth / sampleSize > 640 || bounds.outHeight / sampleSize > 900) {
+                    sampleSize *= 2
+                }
+                BitmapFactory.decodeFile(
+                    path,
+                    BitmapFactory.Options().apply { inSampleSize = sampleSize }
+                )
+            }.getOrNull()
+        }
+    }
+    Box(
+        modifier.clip(shape).background(
+            if (book.type == "pdf") Color(0xFFECE8DE) else Color(0xFFDDEFE9)
+        ),
+        contentAlignment = Alignment.Center
+    ) {
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap!!.asImageBitmap(),
+                contentDescription = "Обложка: ${book.title}",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        } else {
+            Text(
+                book.type.uppercase(),
+                color = accent,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 12.sp
+            )
+        }
     }
 }
