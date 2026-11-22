@@ -2,6 +2,7 @@ package ru.bookapk.reader
 
 import android.content.Context
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.first
@@ -12,6 +13,9 @@ private val LIBRARY_KEY = stringPreferencesKey("books")
 private val CATEGORIES_KEY = stringPreferencesKey("categories")
 private val VISUAL_STYLE_KEY = stringPreferencesKey("visual_style")
 private val ICON_STYLE_KEY = stringPreferencesKey("icon_style")
+private val READER_FONT_SIZE_KEY = floatPreferencesKey("reader_font_size")
+private val READER_LINE_SPACING_KEY = floatPreferencesKey("reader_line_spacing")
+private val READER_THEME_KEY = stringPreferencesKey("reader_theme")
 
 class LibraryStore(private val context: Context) {
     suspend fun load(): List<Book> {
@@ -46,7 +50,10 @@ class LibraryStore(private val context: Context) {
         val prefs = context.dataStore.data.first()
         return ReaderAppearance(
             visualStyle = prefs[VISUAL_STYLE_KEY] ?: "classic",
-            iconStyle = prefs[ICON_STYLE_KEY] ?: "classic"
+            iconStyle = prefs[ICON_STYLE_KEY] ?: "classic",
+            readerFontSize = prefs[READER_FONT_SIZE_KEY] ?: 18f,
+            readerLineSpacing = prefs[READER_LINE_SPACING_KEY] ?: 1.65f,
+            readerTheme = prefs[READER_THEME_KEY] ?: "paper"
         )
     }
 
@@ -54,6 +61,9 @@ class LibraryStore(private val context: Context) {
         context.dataStore.edit {
             it[VISUAL_STYLE_KEY] = appearance.visualStyle
             it[ICON_STYLE_KEY] = appearance.iconStyle
+            it[READER_FONT_SIZE_KEY] = appearance.readerFontSize
+            it[READER_LINE_SPACING_KEY] = appearance.readerLineSpacing
+            it[READER_THEME_KEY] = appearance.readerTheme
         }
     }
 }
