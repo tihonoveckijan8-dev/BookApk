@@ -735,7 +735,7 @@ private fun ReaderScreen(
 
             LazyColumn(
                 state = pdfListState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.weight(1f).fillMaxWidth(),
                 contentPadding = PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
