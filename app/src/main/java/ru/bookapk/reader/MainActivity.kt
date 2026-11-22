@@ -832,7 +832,7 @@ private fun ReaderScreen(
                                     ) {
                                         Column(Modifier.fillMaxWidth()) {
                                             Text("Фрагмент ${index + 1}", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
-                                            Text(paragraph.replace('\\n', ' '), maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
+                                            Text(paragraph.replace('\n', ' '), maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
                                         }
                                     }
                                 }
