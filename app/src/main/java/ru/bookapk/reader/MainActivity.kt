@@ -153,12 +153,19 @@ private fun BookApkApp() {
                             } else null
                         } ?: "Новая книга"
                         val ext = name.substringAfterLast('.', "").lowercase()
-                        require(ext == "pdf" || ext == "txt") { "Поддерживаются только PDF и TXT." }
-                        val target = File(context.filesDir, "books").apply { mkdirs() }
-                        val destination = File(target, "${UUID.randomUUID()}.$ext")
-                        context.contentResolver.openInputStream(uri)?.use { input ->
-                            destination.outputStream().use { output -> input.copyTo(output) }
-                        } ?: throw IllegalStateException("Не удалось прочитать выбранный файл.")
+                        require(ext in setOf("pdf", "txt", "epub", "fb2")) {
+                            "Поддерживаются PDF, TXT, EPUB и FB2."
+                        }
+                        val destination = if (ext == "epub" || ext == "fb2") {
+                            EbookImporter.convert(context, uri, ext)
+                        } else {
+                            val target = File(context.filesDir, "books").apply { mkdirs() }
+                            val file = File(target, "${UUID.randomUUID()}.$ext")
+                            context.contentResolver.openInputStream(uri)?.use { input ->
+                                file.outputStream().use { output -> input.copyTo(output) }
+                            } ?: throw IllegalStateException("Не удалось прочитать выбранный файл.")
+                            file
+                        }
                         Book(UUID.randomUUID().toString(), name.substringBeforeLast('.', name), destination.absolutePath, ext)
                     }
                     persistBooks(books + imported)
@@ -253,7 +260,7 @@ private fun BookApkApp() {
                 activeBook == null -> LibraryDashboard(
                     books = books,
                     categories = categories,
-                    onImport = { picker.launch(arrayOf("application/pdf", "text/plain")) },
+                    onImport = { picker.launch(arrayOf("application/pdf", "text/plain", "application/epub+zip", "application/x-fictionbook+xml", "application/octet-stream")) },
                     onSettings = { showSettings = true },
                     onBackup = { backupLauncher.launch("Моя читалка - резервная копия.zip") },
                     onRestore = { restoreLauncher.launch(arrayOf("application/zip", "application/octet-stream")) },
