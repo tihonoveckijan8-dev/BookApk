@@ -3,40 +3,66 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f6f3ec">
-  <meta name="description" content="Моя читалка — простая русскоязычная читалка PDF и TXT для Android.">
-  <title>Моя читалка — книги всегда под рукой</title>
+  <meta name="theme-color" content="#087f78">
+  <meta name="description" content="Моя читалка — современная Android-библиотека для PDF и TXT с категориями и сохранением прогресса.">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
+  <title>Моя читалка — ваша библиотека в кармане</title>
 </head>
 <body>
   <main class="shell">
-    <nav class="top"><a class="brand" href="./"><span class="mark">Ч</span> Моя читалка</a><a class="github" href="https://github.com/tihonoveckijan8-dev/BookApk">Исходный код ↗</a></nav>
+    <nav class="top">
+      <a class="brand" href="./"><span class="brand-mark"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 13c-7-5-13-4-18-2v25c6-2 12-2 18 3 6-5 12-5 18-3V11c-5-2-11-3-18 2Z"/><path d="M24 14v25"/></svg></span><span>моя<span class="brand-light">читалка</span></span></a>
+      <a class="github" href="https://github.com/tihonoveckijan8-dev/BookApk">Исходный код <span>↗</span></a>
+    </nav>
+
     <section class="hero">
       <div class="copy">
-        <span class="eyebrow">ЧИТАЙТЕ В СВОЁМ РИТМЕ</span>
-        <h1>Ваша библиотека.<br><em>Ваше пространство.</em></h1>
-        <p>Лаконичная читалка для Android. Добавляйте PDF и TXT, возвращайтесь к нужной странице и храните книги на своём устройстве.</p>
-        <a class="button" href="https://github.com/tihonoveckijan8-dev/BookApk/releases/latest">Скачать для Android <span>↓</span></a>
-        <small>APK появится здесь после публикации первого релиза.</small>
-      </div>
-      <div class="phone-wrap" aria-label="Иллюстрация интерфейса приложения">
-        <div class="phone">
-          <div class="phone-head"><span>Моя библиотека</span><b>•••</b></div>
-          <div class="resume"><small>ПРОДОЛЖИТЬ ЧТЕНИЕ</small><strong>Маленький принц</strong><div class="track"><i></i></div><small>Глава 4 · 38%</small></div>
-          <div class="books-title">Мои книги <span>4</span></div>
-          <div class="book-row"><div class="cover mint">TXT</div><div><b>Маленький принц</b><small>Антуан де Сент-Экзюпери</small></div></div>
-          <div class="book-row"><div class="cover sand">PDF</div><div><b>Искусство чтения</b><small>PDF · 240 страниц</small></div></div>
-          <div class="book-row"><div class="cover blue">TXT</div><div><b>Заметки о мире</b><small>Текстовая книга</small></div></div>
-          <div class="add">＋ Добавить книгу</div>
+        <span class="eyebrow"><i></i> ВАША ЛИЧНАЯ БИБЛИОТЕКА</span>
+        <h1>Место, где<br>живут <em>ваши книги.</em></h1>
+        <p>Ничего лишнего — только ваши книги, удобные категории и возможность продолжить с того места, где остановились.</p>
+        <div class="actions">
+          <a class="button" href="https://github.com/tihonoveckijan8-dev/BookApk/releases/latest">Скачать приложение <span>↓</span></a>
+          <a class="source-link" href="https://github.com/tihonoveckijan8-dev/BookApk">Посмотреть проект ↗</a>
         </div>
+        <div class="platform-note"><span class="android-dot"></span> Для Android · PDF и TXT · офлайн-библиотека</div>
+      </div>
+
+      <div class="preview">
+        <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
+        <div class="device">
+          <div class="device-top"><span class="tiny-time">9:41</span><span class="tiny-status">● ● ▰</span></div>
+          <div class="app-head"><div><small>ВОЗВРАЩАЙТЕСЬ К ЧТЕНИЮ</small><h2>Моя читалка</h2></div><div class="avatar">М</div></div>
+          <div class="resume-card">
+            <div class="resume-cover"><span>THE<br>BOOK</span><b>✳</b></div>
+            <div class="resume-copy"><small>ПРОДОЛЖИТЬ</small><strong>Маленький принц</strong><span>Антуан де Сент-Экзюпери</span><div class="progress"><i></i></div><small class="progress-label">38% прочитано</small></div>
+          </div>
+          <div class="search-demo">⌕ <span>Название книги или файла</span></div>
+          <div class="category-head"><b>Библиотека</b><span>12 книг</span></div>
+          <div class="chips"><span class="active">Все книги</span><span>Учёба</span><span>Романы</span><span>+ </span></div>
+          <div class="book-list">
+            <div class="book-item"><div class="mini-cover mint">TXT</div><div><b>Маленький принц</b><small>Романы · TXT</small></div><span>•••</span></div>
+            <div class="book-item"><div class="mini-cover sand">PDF</div><div><b>Физика. Том I</b><small>Учёба · PDF</small></div><span>•••</span></div>
+            <div class="book-item"><div class="mini-cover lilac">PDF</div><div><b>Искусство чтения</b><small>Избранное · PDF</small></div><span>•••</span></div>
+          </div>
+          <div class="device-home"></div>
+        </div>
+        <div class="float-tag"><span>✓</span> Всё хранится на устройстве</div>
       </div>
     </section>
-    <section class="features">
-      <article><span>01</span><h2>Всё в одном месте</h2><p>PDF и TXT собраны в вашей личной библиотеке.</p></article>
-      <article><span>02</span><h2>Продолжайте с того же места</h2><p>Прогресс чтения сохраняется на устройстве.</p></article>
-      <article><span>03</span><h2>Ничего лишнего</h2><p>Чистый интерфейс, комфортная типографика и офлайн-доступ к книгам.</p></article>
+
+    <section class="feature-section">
+      <div class="section-heading"><span class="eyebrow">ПРОДУМАНО ДЛЯ ЧТЕНИЯ</span><h2>Всё нужное.<br><em>В одном месте.</em></h2></div>
+      <div class="features">
+        <article><span class="feature-icon mint-icon">▤</span><small>01 / БИБЛИОТЕКА</small><h3>Ваши книги собраны вместе</h3><p>Добавляйте PDF и TXT с устройства. Ищите, сортируйте и возвращайтесь к нужному файлу.</p></article>
+        <article><span class="feature-icon sand-icon">▦</span><small>02 / КАТЕГОРИИ</small><h3>Порядок по вашим правилам</h3><p>Создавайте собственные категории: учёба, романы, фантастика или что угодно.</p></article>
+        <article><span class="feature-icon lilac-icon">↗</span><small>03 / ПРОГРЕСС</small><h3>Продолжайте с того же места</h3><p>Прогресс чтения сохраняется локально. Ваши книги доступны и без интернета.</p></article>
+      </div>
     </section>
-    <footer><span>Моя читалка · 2026</span><a href="https://github.com/tihonoveckijan8-dev/BookApk">Проект на GitHub ↗</a></footer>
+    <footer><a class="brand footer-brand" href="./"><span class="brand-mark"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 13c-7-5-13-4-18-2v25c6-2 12-2 18 3 6-5 12-5 18-3V11c-5-2-11-3-18 2Z"/><path d="M24 14v25"/></svg></span><span>моя<span class="brand-light">читалка</span></span></a><span>Сделано для спокойного чтения · 2026</span><a href="https://github.com/tihonoveckijan8-dev/BookApk">GitHub ↗</a></footer>
   </main>
 </body>
 </html>
