@@ -202,6 +202,10 @@ private fun BookApkApp() {
                     onBookDelete = { book ->
                         persistBooks(books.filterNot { it.id == book.id })
                         scope.launch(Dispatchers.IO) { runCatching { File(book.path).delete() } }
+                    },
+                    onBookFavoriteChange = { book ->
+                        // WHY: persist the flag with the full book record so favorites survive relaunches.
+                        persistBooks(books.map { if (it.id == book.id) it.copy(isFavorite = !it.isFavorite) else it })
                     }
                 )
                 else -> ReaderScreen(
