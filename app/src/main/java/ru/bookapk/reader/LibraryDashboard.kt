@@ -45,6 +45,8 @@ fun LibraryDashboard(
     categories: List<BookCategory>,
     onImport: () -> Unit,
     onSettings: () -> Unit,
+    onBackup: () -> Unit,
+    onRestore: () -> Unit,
     visualStyle: String,
     onOpen: (Book) -> Unit,
     onCategoryCreate: (BookCategory) -> Unit,
@@ -60,6 +62,7 @@ fun LibraryDashboard(
     var favoritesOnly by remember { mutableStateOf(false) }
     var sortMode by remember { mutableStateOf("Добавления") }
     var sortExpanded by remember { mutableStateOf(false) }
+    var libraryActionsExpanded by remember { mutableStateOf(false) }
 
     val filtered = books.filter { book ->
         book.title.contains(query, ignoreCase = true) &&
@@ -95,6 +98,24 @@ fun LibraryDashboard(
             Column(Modifier.weight(1f)) {
                 Text("Моя читалка", fontSize = 29.sp, fontWeight = FontWeight.Bold, color = LibraryInk)
                 Text("Личное пространство для чтения", color = LibraryMuted, fontSize = 13.sp)
+            }
+            Box {
+                IconButton(onClick = { libraryActionsExpanded = true }) {
+                    Icon(Icons.Rounded.MoreVert, contentDescription = "Действия с библиотекой", tint = LibraryMuted)
+                }
+                DropdownMenu(
+                    expanded = libraryActionsExpanded,
+                    onDismissRequest = { libraryActionsExpanded = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Создать резервную копию") },
+                        onClick = { libraryActionsExpanded = false; onBackup() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Восстановить из копии") },
+                        onClick = { libraryActionsExpanded = false; onRestore() }
+                    )
+                }
             }
             IconButton(onClick = onSettings) { Icon(Icons.Rounded.Settings, contentDescription = "Настройки оформления", tint = LibraryMuted) }
             FilledIconButton(
