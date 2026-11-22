@@ -114,7 +114,9 @@ private fun BookApkApp() {
     var appearance by remember { mutableStateOf(ReaderAppearance()) }
     var showSettings by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
+    var busyMessage by remember { mutableStateOf("Выполняем операцию") }
     var error by remember { mutableStateOf<String?>(null) }
+    var pendingRestoreBackup by remember { mutableStateOf<StagedLibraryBackup?>(null) }
 
     LaunchedEffect(Unit) {
         books = withContext(Dispatchers.IO) { store.load() }
@@ -138,6 +140,7 @@ private fun BookApkApp() {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
             scope.launch {
+                busyMessage = "Добавляем книгу"
                 busy = true
                 error = null
                 try {
@@ -162,6 +165,49 @@ private fun BookApkApp() {
                 } catch (e: Exception) {
                     error = e.message ?: "Не удалось добавить книгу."
                 } finally { busy = false }
+            }
+        }
+    }
+
+    val backupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri: Uri? ->
+        if (uri != null) {
+            scope.launch {
+                busyMessage = "Создаём резервную копию"
+                busy = true
+                error = null
+                try {
+                    withContext(Dispatchers.IO) {
+                        LibraryBackup.export(context, uri, books, categories, appearance)
+                    }
+                    Toast.makeText(context, "Резервная копия сохранена", Toast.LENGTH_LONG).show()
+                } catch (e: Exception) {
+                    error = e.message ?: "Не удалось создать резервную копию."
+                } finally {
+                    busy = false
+                }
+            }
+        }
+    }
+
+    val restoreLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            scope.launch {
+                busyMessage = "Проверяем резервную копию"
+                busy = true
+                error = null
+                try {
+                    pendingRestoreBackup = withContext(Dispatchers.IO) {
+                        LibraryBackup.stageImport(context, uri)
+                    }
+                } catch (e: Exception) {
+                    error = e.message ?: "Не удалось прочитать резервную копию."
+                } finally {
+                    busy = false
+                }
             }
         }
     }
@@ -196,6 +242,8 @@ private fun BookApkApp() {
                     categories = categories,
                     onImport = { picker.launch(arrayOf("application/pdf", "text/plain")) },
                     onSettings = { showSettings = true },
+                    onBackup = { backupLauncher.launch("Моя читалка - резервная копия.zip") },
+                    onRestore = { restoreLauncher.launch(arrayOf("application/zip", "application/octet-stream")) },
                     visualStyle = appearance.visualStyle,
                     onOpen = { book ->
                         val openedAt = System.currentTimeMillis()
@@ -307,9 +355,77 @@ private fun BookApkApp() {
             }
         }
     }
-    if (busy) AlertDialog(onDismissRequest = {}, title = { Text("Добавляем книгу") }, text = { LinearProgressIndicator(Modifier.fillMaxWidth()) }, confirmButton = {})
+    pendingRestoreBackup?.let { staged ->
+        AlertDialog(
+            onDismissRequest = {
+                pendingRestoreBackup = null
+                scope.launch(Dispatchers.IO) { LibraryBackup.deleteStaging(staged) }
+            },
+            title = { Text("Восстановить библиотеку?") },
+            text = {
+                Text(
+                    "В копии найдено книг: " + staged.books.size +
+                        ", категорий: " + staged.categories.size +
+                        ". Текущая библиотека, закладки, заметки, карточки повторения и оформление будут заменены."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingRestoreBackup = null
+                    scope.launch {
+                        busyMessage = "Восстанавливаем библиотеку"
+                        busy = true
+                        var restoredBooks: List<Book> = emptyList()
+                        var committed = false
+                        try {
+                            restoredBooks = withContext(Dispatchers.IO) {
+                                LibraryBackup.installFiles(context, staged)
+                            }
+                            withContext(Dispatchers.IO) {
+                                store.saveBackupState(restoredBooks, staged.categories, staged.appearance)
+                            }
+                            committed = true
+                            val previousBooks = books
+                            books = restoredBooks
+                            categories = staged.categories
+                            appearance = staged.appearance
+                            applyLauncherIcon(context, staged.appearance.iconStyle)
+                            withContext(Dispatchers.IO) {
+                                previousBooks.forEach { oldBook ->
+                                    if (restoredBooks.none { it.path == oldBook.path }) {
+                                        runCatching { File(oldBook.path).delete() }
+                                    }
+                                }
+                            }
+                            Toast.makeText(context, "Библиотека восстановлена", Toast.LENGTH_LONG).show()
+                        } catch (e: Exception) {
+                            if (!committed) {
+                                withContext(Dispatchers.IO) {
+                                    restoredBooks.forEach { runCatching { File(it.path).delete() } }
+                                }
+                            }
+                            error = e.message ?: "Не удалось восстановить библиотеку."
+                        } finally {
+                            withContext(Dispatchers.IO) {
+                                LibraryBackup.deleteStaging(staged)
+                            }
+                            busy = false
+                        }
+                    }
+                }) { Text("Заменить библиотеку") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    pendingRestoreBackup = null
+                    scope.launch(Dispatchers.IO) { LibraryBackup.deleteStaging(staged) }
+                }) { Text("Отмена") }
+            }
+        )
+    }
+
+    if (busy) AlertDialog(onDismissRequest = {}, title = { Text(busyMessage) }, text = { LinearProgressIndicator(Modifier.fillMaxWidth()) }, confirmButton = {})
     error?.let { message ->
-        AlertDialog(onDismissRequest = { error = null }, title = { Text("Не удалось открыть файл") }, text = { Text(message) }, confirmButton = { TextButton(onClick = { error = null }) { Text("Понятно") } })
+        AlertDialog(onDismissRequest = { error = null }, title = { Text("Операция не выполнена") }, text = { Text(message) }, confirmButton = { TextButton(onClick = { error = null }) { Text("Понятно") } })
     }
 }
 
