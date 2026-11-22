@@ -15,6 +15,7 @@ import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,6 +37,7 @@ fun LibraryDashboard(
     books: List<Book>,
     categories: List<BookCategory>,
     onImport: () -> Unit,
+    onSettings: () -> Unit,
     onOpen: (Book) -> Unit,
     onCategoryCreate: (BookCategory) -> Unit,
     onCategoryDelete: (BookCategory) -> Unit,
@@ -64,6 +66,7 @@ fun LibraryDashboard(
                 Text("Моя читалка", fontSize = 29.sp, fontWeight = FontWeight.Bold, color = LibraryInk)
                 Text("Личное пространство для чтения", color = LibraryMuted, fontSize = 13.sp)
             }
+            IconButton(onClick = onSettings) { Icon(Icons.Rounded.Settings, contentDescription = "Настройки оформления", tint = LibraryMuted) }
             FilledIconButton(
                 onClick = onImport,
                 colors = IconButtonDefaults.filledIconButtonColors(containerColor = LibraryTeal)
