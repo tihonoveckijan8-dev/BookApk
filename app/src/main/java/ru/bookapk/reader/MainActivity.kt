@@ -238,8 +238,14 @@ private fun BookApkApp() {
                             readerTheme = theme
                         ))
                     },
-                    onBookmark = { position, title ->
-                        val bookmark = ReaderBookmark(UUID.randomUUID().toString(), position, title.trim().ifBlank { "Закладка" })
+                    onBookmark = { position, offsetPx, title, note ->
+                        val bookmark = ReaderBookmark(
+                            id = UUID.randomUUID().toString(),
+                            position = position,
+                            title = title.trim().ifBlank { "Закладка" },
+                            offsetPx = offsetPx,
+                            note = note.trim()
+                        )
                         val updated = books.map { current ->
                             if (current.id == activeBook!!.id) current.copy(
                                 bookmarkPosition = position,
@@ -520,7 +526,7 @@ private fun ReaderScreen(
     book: Book,
     onBack: () -> Unit,
     onPosition: (Int, Int, Int) -> Unit,
-    onBookmark: (Int, String) -> Unit,
+    onBookmark: (Int, Int, String, String) -> Unit,
     onRemoveBookmark: (String) -> Unit,
     visualStyle: String,
     readerFontSize: Float,
@@ -541,6 +547,7 @@ private fun ReaderScreen(
     var searchQuery by remember { mutableStateOf("") }
     var showBookmarkDialog by remember { mutableStateOf(false) }
     var bookmarkTitle by remember { mutableStateOf("") }
+    var bookmarkNote by remember { mutableStateOf("") }
     var pageCount by remember { mutableIntStateOf(0) }
     var page by remember(book.id) { mutableIntStateOf(book.readingPosition.coerceAtLeast(0)) }
     var loading by remember { mutableStateOf(true) }
@@ -587,6 +594,7 @@ private fun ReaderScreen(
     }
     val currentChapter = txtDocument.chapters.getOrNull(currentChapterIndex)
     val savedPosition = if (book.type == "pdf") page else currentTextPosition
+    val savedOffsetPx = if (book.type == "pdf") 0 else listState.firstVisibleItemScrollOffset
     val readerBackground = when (activeReaderTheme) {
         "sepia" -> Color(0xFFF1E5CE)
         "night" -> Color(0xFF171B1C)
@@ -622,6 +630,7 @@ private fun ReaderScreen(
             }
             IconButton(onClick = {
                 bookmarkTitle = if (book.type == "pdf") "Страница ${savedPosition + 1}" else "Фрагмент ${savedPosition + 1}"
+                bookmarkNote = ""
                 showBookmarkDialog = true
             }) {
                 Icon(Icons.Rounded.BookmarkBorder, contentDescription = "Добавить закладку", tint = MaterialTheme.colorScheme.primary)
@@ -797,18 +806,27 @@ private fun ReaderScreen(
             onDismissRequest = { showBookmarkDialog = false },
             title = { Text("Новая закладка") },
             text = {
-                OutlinedTextField(
-                    value = bookmarkTitle,
-                    onValueChange = { bookmarkTitle = it },
-                    label = { Text("Название") },
-                    singleLine = true
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = bookmarkTitle,
+                        onValueChange = { bookmarkTitle = it },
+                        label = { Text("Название") },
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = bookmarkNote,
+                        onValueChange = { bookmarkNote = it },
+                        label = { Text("Заметка (необязательно)") },
+                        minLines = 2,
+                        maxLines = 4
+                    )
+                }
             },
             confirmButton = {
                 TextButton(
                     enabled = bookmarkTitle.isNotBlank(),
                     onClick = {
-                        onBookmark(savedPosition, bookmarkTitle)
+                        onBookmark(savedPosition, savedOffsetPx, bookmarkTitle, bookmarkNote)
                         showBookmarkDialog = false
                     }
                 ) { Text("Сохранить") }
@@ -912,13 +930,25 @@ private fun ReaderScreen(
                                             scale = 1f
                                         } else {
                                             readerScope.launch {
-                                                listState.animateScrollToItem(bookmark.position.coerceAtLeast(0))
+                                                listState.animateScrollToItem(
+                                                    bookmark.position.coerceIn(0, (paragraphs.size - 1).coerceAtLeast(0)),
+                                                    bookmark.offsetPx.coerceAtLeast(0)
+                                                )
                                             }
                                         }
                                         showBookmarks = false
                                     }.padding(vertical = 9.dp)
                                 ) {
                                     Text(bookmark.title, fontWeight = FontWeight.SemiBold)
+                                    if (bookmark.note.isNotBlank()) {
+                                        Text(
+                                            bookmark.note,
+                                            fontSize = 12.sp,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = .72f)
+                                        )
+                                    }
                                     Text(
                                         if (book.type == "pdf") "Страница ${bookmark.position + 1}" else "Фрагмент ${bookmark.position + 1}",
                                         fontSize = 12.sp,
