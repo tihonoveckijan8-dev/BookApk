@@ -1321,12 +1321,9 @@ private fun ReaderScreen(
                                                         nextReviewAt = reviewedAt + intervalDays * 24L * 60L * 60L * 1000L
                                                     )
                                                 )
-                                                if (safeIndex == studyCards.lastIndex) {
-                                                    showStudyCards = false
-                                                } else {
-                                                    studyCardIndex = safeIndex + 1
-                                                    studyCardRevealed = false
-                                                }
+                                                // WHY: after updating review time the card is removed from the due queue; restart at its first remaining item.
+                                                studyCardIndex = 0
+                                                studyCardRevealed = false
                                             }
                                         ) { Text("Знаю") }
                                     }
