@@ -55,6 +55,7 @@ fun LibraryDashboard(
     onBackup: () -> Unit,
     onRestore: () -> Unit,
     onStatistics: () -> Unit,
+    onNotes: () -> Unit,
     visualStyle: String,
     onOpen: (Book) -> Unit,
     onCategoryCreate: (BookCategory) -> Unit,
@@ -130,6 +131,9 @@ fun LibraryDashboard(
                 }
             }
             IconButton(onClick = onSettings) { Icon(Icons.Rounded.Settings, contentDescription = "Настройки оформления", tint = LibraryMuted) }
+            TextButton(onClick = onNotes, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                Text("Заметки", color = LibraryTeal, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
             FilledIconButton(
                 onClick = onImport,
                 colors = IconButtonDefaults.filledIconButtonColors(containerColor = accent)
