@@ -86,7 +86,7 @@ private fun BookApkApp() {
                         val destination = File(target, "${UUID.randomUUID()}.$ext")
                         context.contentResolver.openInputStream(uri)?.use { input ->
                             destination.outputStream().use { output -> input.copyTo(output) }
-                        } ?: error("Не удалось прочитать выбранный файл.")
+                        } ?: throw IllegalStateException("Не удалось прочитать выбранный файл.")
                         Book(UUID.randomUUID().toString(), name.substringBeforeLast('.', name), destination.absolutePath, ext)
                     }
                     books = books + imported
