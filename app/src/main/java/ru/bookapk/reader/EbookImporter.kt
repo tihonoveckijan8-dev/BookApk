@@ -15,7 +15,8 @@ import java.util.zip.ZipFile
  * Converts reflowable ebook formats into the reader's existing paragraph model.
  * WHY: the current reader already persists exact paragraph/offset positions, bookmarks and notes.
  */
-data class ImportedEbook(val file: File, val title: String?)
+data class EbookMetadata(val title: String?, val author: String?)
+data class ImportedEbook(val file: File, val title: String?, val author: String?)
 
 object EbookImporter {
     fun convert(context: Context, source: Uri, format: String): ImportedEbook {
@@ -30,16 +31,17 @@ object EbookImporter {
             require(text.isNotBlank()) { "В книге не найден читаемый текст." }
             output.writeText(text, StandardCharsets.UTF_8)
             // WHY: publisher metadata is a better library label than a possibly opaque downloaded filename.
-            val title = runCatching { readMetadataTitle(context, source, format) }.getOrNull()
-                ?.trim()?.takeIf { it.isNotBlank() }
-            return ImportedEbook(output, title)
+            val metadata = runCatching { readMetadata(context, source, format) }.getOrNull()
+            val title = metadata?.title?.trim()?.takeIf { it.isNotBlank() }
+            val author = metadata?.author?.trim()?.takeIf { it.isNotBlank() }
+            return ImportedEbook(output, title, author)
         } catch (error: Exception) {
             output.delete()
             throw error
         }
     }
 
-    private fun readMetadataTitle(context: Context, source: Uri, format: String): String? {
+    private fun readMetadata(context: Context, source: Uri, format: String): EbookMetadata? {
         return when (format.lowercase()) {
             "epub" -> {
                 val input = context.contentResolver.openInputStream(source)
@@ -58,8 +60,12 @@ object EbookImporter {
                         val packageDoc = zip.getInputStream(opfEntry).bufferedReader(StandardCharsets.UTF_8).use {
                             Jsoup.parse(it.readText(), "", Parser.xmlParser())
                         }
-                        packageDoc.getElementsByTag("dc:title").firstOrNull()?.text()
+                        // WHY: EPUB package metadata identifies the work and its credited creator independently of its filename.
+                        val title = packageDoc.getElementsByTag("dc:title").firstOrNull()?.text()
                             ?: packageDoc.getElementsByTag("title").firstOrNull()?.text()
+                        val author = packageDoc.getElementsByTag("dc:creator").firstOrNull()?.text()
+                            ?: packageDoc.getElementsByTag("creator").firstOrNull()?.text()
+                        EbookMetadata(title, author)
                     }
                 } finally {
                     temp.delete()
@@ -73,20 +79,29 @@ object EbookImporter {
                     parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
                     parser.setInput(it, null)
                     var inTitleInfo = false
+                    var inAuthor = false
                     var title: String? = null
-                    while (parser.eventType != XmlPullParser.END_DOCUMENT && title.isNullOrBlank()) {
+                    val authorParts = mutableListOf<String>()
+                    while (parser.eventType != XmlPullParser.END_DOCUMENT) {
                         when (parser.eventType) {
                             XmlPullParser.START_TAG -> when (parser.name.substringAfter(':').lowercase()) {
                                 "title-info" -> inTitleInfo = true
-                                "book-title" -> if (inTitleInfo) title = readElementText(parser)
+                                "author" -> if (inTitleInfo) inAuthor = true
+                                "book-title" -> if (inTitleInfo && title.isNullOrBlank()) title = readElementText(parser)
+                                "first-name", "middle-name", "last-name", "nickname" ->
+                                    if (inTitleInfo && inAuthor) {
+                                        readElementText(parser).takeIf { value -> value.isNotBlank() }?.let(authorParts::add)
+                                    }
                             }
-                            XmlPullParser.END_TAG -> if (parser.name.substringAfter(':').equals("title-info", true)) {
-                                inTitleInfo = false
+                            XmlPullParser.END_TAG -> when (parser.name.substringAfter(':').lowercase()) {
+                                "author" -> inAuthor = false
+                                "title-info" -> inTitleInfo = false
                             }
                         }
+                        if (!title.isNullOrBlank() && !inTitleInfo) break
                         parser.next()
                     }
-                    title
+                    EbookMetadata(title, authorParts.joinToString(" ").takeIf { it.isNotBlank() })
                 }
             }
             else -> null
