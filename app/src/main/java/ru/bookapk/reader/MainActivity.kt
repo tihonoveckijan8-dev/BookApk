@@ -23,6 +23,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
@@ -252,6 +253,20 @@ private fun BookApkApp() {
                                 bookmarkPosition = position,
                                 bookmarks = current.bookmarks + bookmark
                             ) else current
+                        }
+                        persistBooks(updated)
+                        activeBook = updated.firstOrNull { it.id == activeBook!!.id }
+                    },
+                    onAddAnnotation = { annotation ->
+                        val updated = books.map { current ->
+                            if (current.id == activeBook!!.id) current.copy(annotations = current.annotations + annotation) else current
+                        }
+                        persistBooks(updated)
+                        activeBook = updated.firstOrNull { it.id == activeBook!!.id }
+                    },
+                    onRemoveAnnotation = { annotationId ->
+                        val updated = books.map { current ->
+                            if (current.id == activeBook!!.id) current.copy(annotations = current.annotations.filterNot { it.id == annotationId }) else current
                         }
                         persistBooks(updated)
                         activeBook = updated.firstOrNull { it.id == activeBook!!.id }
@@ -538,6 +553,8 @@ private fun ReaderScreen(
     onPosition: (Int, Int, Int) -> Unit,
     onBookmark: (Int, Int, String, String) -> Unit,
     onUpdateBookmark: (ReaderBookmark) -> Unit,
+    onAddAnnotation: (ReaderAnnotation) -> Unit,
+    onRemoveAnnotation: (String) -> Unit,
     onRemoveBookmark: (String) -> Unit,
     visualStyle: String,
     readerFontSize: Float,
@@ -560,6 +577,12 @@ private fun ReaderScreen(
     var bookmarkTitle by remember { mutableStateOf("") }
     var bookmarkNote by remember { mutableStateOf("") }
     var editingBookmarkId by remember { mutableStateOf<String?>(null) }
+    var showAnnotations by remember { mutableStateOf(false) }
+    var showAnnotationDialog by remember { mutableStateOf(false) }
+    var annotationNote by remember { mutableStateOf("") }
+    var annotationColor by remember { mutableStateOf("yellow") }
+    var pendingAnnotationPosition by remember { mutableIntStateOf(-1) }
+    var pendingAnnotationOffset by remember { mutableIntStateOf(0) }
     var pageCount by remember { mutableIntStateOf(0) }
     var page by remember(book.id) { mutableIntStateOf(book.readingPosition.coerceAtLeast(0)) }
     var loading by remember { mutableStateOf(true) }
@@ -662,6 +685,7 @@ private fun ReaderScreen(
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = { showContents = true }) { Text("Главы") }
                 TextButton(onClick = { searchQuery = ""; showSearch = true }) { Text("Поиск") }
+                TextButton(onClick = { showAnnotations = true }) { Text("Заметки · ${book.annotations.size}") }
                 TextButton(onClick = { showReaderSettings = true }) { Text("Настроить") }
             }
             LazyColumn(
@@ -671,13 +695,31 @@ private fun ReaderScreen(
             ) {
                 items(paragraphs.size) { index ->
                     val chapter = chapterStarts[index]
+                    val annotation = book.annotations.lastOrNull { it.position == index }
+                    val annotationFill = when (annotation?.color) {
+                        "green" -> Color(0x553CBF83)
+                        "blue" -> Color(0x554A91E8)
+                        "pink" -> Color(0x55E879A8)
+                        else -> Color(0x66F2CF55)
+                    }
                     Text(
                         paragraphs[index],
                         fontSize = if (chapter != null) (fontSize + 4).sp else fontSize.sp,
                         lineHeight = (fontSize * lineSpacing).sp,
                         fontWeight = if (chapter != null) FontWeight.Bold else FontWeight.Normal,
                         color = readerForeground,
-                        modifier = Modifier.padding(top = if (chapter != null) 22.dp else 0.dp, bottom = 19.dp)
+                        modifier = Modifier
+                            .then(if (annotation != null) Modifier.clip(RoundedCornerShape(8.dp)).background(annotationFill).padding(horizontal = 7.dp, vertical = 5.dp) else Modifier)
+                            .pointerInput(book.id, index) {
+                                detectTapGestures(onLongPress = {
+                                    pendingAnnotationPosition = index
+                                    pendingAnnotationOffset = if (listState.firstVisibleItemIndex == index) listState.firstVisibleItemScrollOffset else 0
+                                    annotationNote = annotation?.note.orEmpty()
+                                    annotationColor = annotation?.color ?: "yellow"
+                                    showAnnotationDialog = true
+                                })
+                            }
+                            .padding(top = if (chapter != null) 22.dp else 0.dp, bottom = 19.dp)
                     )
                 }
             }
