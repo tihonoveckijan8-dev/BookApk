@@ -65,7 +65,7 @@ fun LibraryDashboard(
     val canvas by animateColorAsState(canvasTarget, tween(440), label = "library-canvas")
     val cardSurface by animateColorAsState(cardTarget, tween(380), label = "library-cards")
     val accent by animateColorAsState(
-        when (visualStyle) { "clay" -> Color(0xFF426D68); "glass" -> Color(0xFF376F78); else -> accent },
+        when (visualStyle) { "clay" -> Color(0xFF426D68); "glass" -> Color(0xFF376F78); else -> LibraryTeal },
         tween(420), label = "library-accent"
     )
 
