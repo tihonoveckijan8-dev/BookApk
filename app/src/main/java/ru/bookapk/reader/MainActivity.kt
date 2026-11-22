@@ -25,6 +25,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Book
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -62,6 +64,7 @@ private fun BookApkApp() {
     var books by remember { mutableStateOf<List<Book>>(emptyList()) }
     var activeBook by remember { mutableStateOf<Book?>(null) }
     var query by remember { mutableStateOf("") }
+    var showFavorites by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -141,11 +144,16 @@ private fun BookApkApp() {
                         Spacer(Modifier.height(22.dp))
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Все книги", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                        Text("${books.size}", color = Color.Gray)
+                        Text(if (showFavorites) "Избранное" else "Все книги", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { showFavorites = !showFavorites }) {
+                            Icon(if (showFavorites) Icons.Rounded.Book else Icons.Rounded.FavoriteBorder, contentDescription = null, modifier = Modifier.size(17.dp))
+                            Spacer(Modifier.width(5.dp))
+                            Text(if (showFavorites) "Все" else "Избранное")
+                        }
                     }
                     Spacer(Modifier.height(10.dp))
-                    val filtered = books.filter { it.title.contains(query, ignoreCase = true) }
+                    // WHY: apply the favorite filter before rendering so search and favorites compose naturally.
+                    val filtered = books.filter { it.title.contains(query, ignoreCase = true) && (!showFavorites || it.isFavorite) }
                     if (filtered.isEmpty()) {
                         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -175,6 +183,17 @@ private fun BookApkApp() {
                                             Text(book.title, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                             Text(if (book.type == "pdf") "Документ PDF" else "Текстовая книга", color = Color.Gray, fontSize = 13.sp)
                                             if (book.progress > 0) Text("Прогресс: ${book.progress}%", color = Teal, fontSize = 12.sp)
+                                        }
+                                        IconButton(onClick = {
+                                            val updated = books.map { item -> if (item.id == book.id) item.copy(isFavorite = !item.isFavorite) else item }
+                                            books = updated
+                                            scope.launch(Dispatchers.IO) { store.save(updated) }
+                                        }) {
+                                            Icon(
+                                                if (book.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                                                contentDescription = if (book.isFavorite) "Убрать из избранного" else "В избранное",
+                                                tint = if (book.isFavorite) Color(0xFFD65A69) else Color(0xFF8A938D)
+                                            )
                                         }
                                     }
                                 }
