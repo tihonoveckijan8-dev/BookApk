@@ -401,7 +401,7 @@ private fun BookApkApp() {
                 }
                 if (books.isNotEmpty()) {
                     ExtendedFloatingActionButton(
-                        onClick = { picker.launch(arrayOf("application/pdf", "text/plain")) },
+                        onClick = { picker.launch(arrayOf("*/*")) },
                         modifier = Modifier.padding(20.dp).navigationBarsPadding(),
                         icon = { Icon(Icons.Rounded.Add, contentDescription = "Добавить") },
                         text = { Text("Добавить книгу") },
@@ -744,7 +744,7 @@ private fun ReaderScreen(
                 }
             }
 
-            if (book.type == "txt") {
+            if (book.type != "pdf") {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                     verticalAlignment = Alignment.CenterVertically
