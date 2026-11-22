@@ -1130,7 +1130,7 @@ private fun ReaderScreen(
                                                 .padding(vertical = 9.dp, horizontal = 8.dp)
                                         ) {
                                             Text(
-                                                item.text.replace('\\n', ' '),
+                                                item.text.replace('\n', ' '),
                                                 fontSize = 12.sp,
                                                 maxLines = 2,
                                                 overflow = TextOverflow.Ellipsis,
