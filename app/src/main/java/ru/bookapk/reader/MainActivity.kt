@@ -15,6 +15,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -65,10 +66,29 @@ private fun BookApkApp() {
     var activeBook by remember { mutableStateOf<Book?>(null) }
     var query by remember { mutableStateOf("") }
     var showFavorites by remember { mutableStateOf(false) }
+    var categories by remember { mutableStateOf<List<String>>(emptyList()) }
+    var selectedCategory by remember { mutableStateOf<String?>(null) }
+    var showCategoryDialog by remember { mutableStateOf(false) }
+    var categoryDraft by remember { mutableStateOf("") }
+    var categoryTargetBook by remember { mutableStateOf<Book?>(null) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) { books = withContext(Dispatchers.IO) { store.load() } }
+    LaunchedEffect(Unit) {
+        val loadedBooks = withContext(Dispatchers.IO) { store.load() }
+        val savedCategories = withContext(Dispatchers.IO) { store.loadCategories() }
+        books = loadedBooks
+        // WHY: categories already attached to books are recovered even if the separate category list is older.
+        categories = (savedCategories + loadedBooks.map { it.category }.filter { it.isNotBlank() })
+            .distinct().sortedBy { it.lowercase() }
+    }
+
+    fun assignCategory(bookId: String, category: String) {
+        val updated = books.map { item -> if (item.id == bookId) item.copy(category = category) else item }
+        books = updated
+        categoryTargetBook = null
+        scope.launch(Dispatchers.IO) { store.save(updated) }
+    }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
@@ -145,15 +165,39 @@ private fun BookApkApp() {
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(if (showFavorites) "Избранное" else "Все книги", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { showCategoryDialog = true }) { Text("Категории +") }
                         TextButton(onClick = { showFavorites = !showFavorites }) {
                             Icon(if (showFavorites) Icons.Rounded.Book else Icons.Rounded.FavoriteBorder, contentDescription = null, modifier = Modifier.size(17.dp))
                             Spacer(Modifier.width(5.dp))
                             Text(if (showFavorites) "Все" else "Избранное")
                         }
                     }
+                    if (categories.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            FilterChip(
+                                selected = selectedCategory == null,
+                                onClick = { selectedCategory = null },
+                                label = { Text("Все категории") }
+                            )
+                            categories.forEach { category ->
+                                FilterChip(
+                                    selected = selectedCategory == category,
+                                    onClick = { selectedCategory = if (selectedCategory == category) null else category },
+                                    label = { Text(category) }
+                                )
+                            }
+                        }
+                    }
                     Spacer(Modifier.height(10.dp))
-                    // WHY: apply the favorite filter before rendering so search and favorites compose naturally.
-                    val filtered = books.filter { it.title.contains(query, ignoreCase = true) && (!showFavorites || it.isFavorite) }
+                    // WHY: combine text, favorites and category filters without changing the reader's saved progress.
+                    val filtered = books.filter {
+                        it.title.contains(query, ignoreCase = true) &&
+                            (!showFavorites || it.isFavorite) &&
+                            (selectedCategory == null || it.category == selectedCategory)
+                    }
                     if (filtered.isEmpty()) {
                         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -182,6 +226,7 @@ private fun BookApkApp() {
                                         Column(Modifier.weight(1f)) {
                                             Text(book.title, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                             Text(if (book.type == "pdf") "Документ PDF" else "Текстовая книга", color = Color.Gray, fontSize = 13.sp)
+                                            if (book.category.isNotBlank()) Text(book.category, color = Teal, fontSize = 12.sp)
                                             if (book.progress > 0) Text("Прогресс: ${book.progress}%", color = Teal, fontSize = 12.sp)
                                         }
                                         IconButton(onClick = {
@@ -194,6 +239,9 @@ private fun BookApkApp() {
                                                 contentDescription = if (book.isFavorite) "Убрать из избранного" else "В избранное",
                                                 tint = if (book.isFavorite) Color(0xFFD65A69) else Color(0xFF8A938D)
                                             )
+                                        }
+                                        TextButton(onClick = { categoryTargetBook = book }) {
+                                            Text("Папка", fontSize = 11.sp)
                                         }
                                     }
                                 }
@@ -227,6 +275,53 @@ private fun BookApkApp() {
     if (busy) AlertDialog(onDismissRequest = {}, title = { Text("Добавляем книгу") }, text = { LinearProgressIndicator(Modifier.fillMaxWidth()) }, confirmButton = {})
     error?.let { message ->
         AlertDialog(onDismissRequest = { error = null }, title = { Text("Не удалось открыть файл") }, text = { Text(message) }, confirmButton = { TextButton(onClick = { error = null }) { Text("Понятно") } })
+    }
+    if (showCategoryDialog) {
+        AlertDialog(
+            onDismissRequest = { showCategoryDialog = false; categoryDraft = "" },
+            title = { Text("Новая категория") },
+            text = {
+                OutlinedTextField(
+                    value = categoryDraft,
+                    onValueChange = { categoryDraft = it.take(32) },
+                    singleLine = true,
+                    label = { Text("Название") },
+                    placeholder = { Text("Например, Учёба") }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val name = categoryDraft.trim()
+                    if (name.isNotBlank() && categories.none { it.equals(name, ignoreCase = true) }) {
+                        val updated = (categories + name).sortedBy { it.lowercase() }
+                        categories = updated
+                        scope.launch(Dispatchers.IO) { store.saveCategories(updated) }
+                    }
+                    categoryDraft = ""
+                    showCategoryDialog = false
+                }) { Text("Создать") }
+            },
+            dismissButton = { TextButton(onClick = { showCategoryDialog = false; categoryDraft = "" }) { Text("Отмена") } }
+        )
+    }
+    categoryTargetBook?.let { target ->
+        AlertDialog(
+            onDismissRequest = { categoryTargetBook = null },
+            title = { Text("Категория книги") },
+            text = {
+                Column {
+                    TextButton(onClick = { assignCategory(target.id, "") }) { Text("Без категории") }
+                    categories.forEach { category ->
+                        TextButton(onClick = { assignCategory(target.id, category) }) { Text(category) }
+                    }
+                    TextButton(onClick = {
+                        categoryTargetBook = null
+                        showCategoryDialog = true
+                    }) { Text("＋ Создать категорию") }
+                }
+            },
+            confirmButton = { TextButton(onClick = { categoryTargetBook = null }) { Text("Готово") } }
+        )
     }
 }
 
