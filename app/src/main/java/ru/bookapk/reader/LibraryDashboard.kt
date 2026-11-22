@@ -47,6 +47,7 @@ fun LibraryDashboard(
     onSettings: () -> Unit,
     onBackup: () -> Unit,
     onRestore: () -> Unit,
+    onStatistics: () -> Unit,
     visualStyle: String,
     onOpen: (Book) -> Unit,
     onCategoryCreate: (BookCategory) -> Unit,
@@ -114,6 +115,10 @@ fun LibraryDashboard(
                     DropdownMenuItem(
                         text = { Text("Восстановить из копии") },
                         onClick = { libraryActionsExpanded = false; onRestore() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Статистика чтения") },
+                        onClick = { libraryActionsExpanded = false; onStatistics() }
                     )
                 }
             }
