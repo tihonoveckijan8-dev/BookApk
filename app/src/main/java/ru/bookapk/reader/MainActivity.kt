@@ -165,6 +165,7 @@ private fun BookApkApp() {
                     categories = categories,
                     onImport = { picker.launch(arrayOf("application/pdf", "text/plain")) },
                     onSettings = { showSettings = true },
+                    visualStyle = appearance.visualStyle,
                     onOpen = { activeBook = it },
                     onCategoryCreate = { category ->
                         categories = categories + category
