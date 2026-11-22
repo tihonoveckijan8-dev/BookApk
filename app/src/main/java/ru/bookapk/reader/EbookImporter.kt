@@ -15,8 +15,10 @@ import java.util.zip.ZipFile
  * Converts reflowable ebook formats into the reader's existing paragraph model.
  * WHY: the current reader already persists exact paragraph/offset positions, bookmarks and notes.
  */
+data class ImportedEbook(val file: File, val title: String?)
+
 object EbookImporter {
-    fun convert(context: Context, source: Uri, format: String): File {
+    fun convert(context: Context, source: Uri, format: String): ImportedEbook {
         val outputDirectory = File(context.filesDir, "books").apply { mkdirs() }
         val output = File(outputDirectory, "${java.util.UUID.randomUUID()}.txt")
         try {
@@ -27,10 +29,67 @@ object EbookImporter {
             }
             require(text.isNotBlank()) { "В книге не найден читаемый текст." }
             output.writeText(text, StandardCharsets.UTF_8)
-            return output
+            // WHY: publisher metadata is a better library label than a possibly opaque downloaded filename.
+            val title = runCatching { readMetadataTitle(context, source, format) }.getOrNull()
+                ?.trim()?.takeIf { it.isNotBlank() }
+            return ImportedEbook(output, title)
         } catch (error: Exception) {
             output.delete()
             throw error
+        }
+    }
+
+    private fun readMetadataTitle(context: Context, source: Uri, format: String): String? {
+        return when (format.lowercase()) {
+            "epub" -> {
+                val input = context.contentResolver.openInputStream(source)
+                    ?: throw IllegalStateException("Не удалось открыть EPUB-файл.")
+                val temp = File(context.cacheDir, "ebook-meta-${java.util.UUID.randomUUID()}.epub")
+                input.use { stream -> temp.outputStream().use { stream.copyTo(it) } }
+                try {
+                    ZipFile(temp).use { zip ->
+                        val container = zip.getEntry("META-INF/container.xml") ?: return@use null
+                        val containerDoc = zip.getInputStream(container).bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
+                        val rootfile = Jsoup.parse(containerDoc, "", Parser.xmlParser())
+                            .getElementsByTag("rootfile").firstOrNull() ?: return@use null
+                        val opfPath = rootfile.attr("full-path")
+                        if (opfPath.isBlank() || opfPath.startsWith("/") || opfPath.split("/").contains("..")) return@use null
+                        val opfEntry = zip.getEntry(opfPath) ?: return@use null
+                        val packageDoc = zip.getInputStream(opfEntry).bufferedReader(StandardCharsets.UTF_8).use {
+                            Jsoup.parse(it.readText(), "", Parser.xmlParser())
+                        }
+                        packageDoc.getElementsByTag("dc:title").firstOrNull()?.text()
+                            ?: packageDoc.getElementsByTag("title").firstOrNull()?.text()
+                    }
+                } finally {
+                    temp.delete()
+                }
+            }
+            "fb2" -> {
+                val input = context.contentResolver.openInputStream(source)
+                    ?: throw IllegalStateException("Не удалось открыть FB2-файл.")
+                input.use {
+                    val parser = Xml.newPullParser()
+                    parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
+                    parser.setInput(it, null)
+                    var inTitleInfo = false
+                    var title: String? = null
+                    while (parser.eventType != XmlPullParser.END_DOCUMENT && title.isNullOrBlank()) {
+                        when (parser.eventType) {
+                            XmlPullParser.START_TAG -> when (parser.name.substringAfter(':').lowercase()) {
+                                "title-info" -> inTitleInfo = true
+                                "book-title" -> if (inTitleInfo) title = readElementText(parser)
+                            }
+                            XmlPullParser.END_TAG -> if (parser.name.substringAfter(':').equals("title-info", true)) {
+                                inTitleInfo = false
+                            }
+                        }
+                        parser.next()
+                    }
+                    title
+                }
+            }
+            else -> null
         }
     }
 
