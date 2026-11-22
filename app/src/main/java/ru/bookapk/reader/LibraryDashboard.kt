@@ -66,7 +66,7 @@ fun LibraryDashboard(
     var libraryActionsExpanded by remember { mutableStateOf(false) }
 
     val filtered = books.filter { book ->
-        book.title.contains(query, ignoreCase = true) &&
+        (book.title.contains(query, ignoreCase = true) || book.author.contains(query, ignoreCase = true)) &&
             (selectedCategory == null || book.categoryId == selectedCategory) &&
             (!favoritesOnly || book.isFavorite)
     }.let { matches ->
@@ -193,6 +193,9 @@ fun LibraryDashboard(
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
                         Text(lastRead.title, fontWeight = FontWeight.Bold, color = LibraryInk, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (lastRead.author.isNotBlank()) {
+                            Text(lastRead.author, color = LibraryMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
                         Text("${categoryLabel(lastRead.categoryId)} · ${lastRead.progress}% прочитано", color = LibraryMuted, fontSize = 12.sp)
                         Spacer(Modifier.height(9.dp))
                         LinearProgressIndicator(
@@ -278,6 +281,9 @@ fun LibraryDashboard(
                                 Modifier.weight(1f).clickable { onOpen(book) }
                             ) {
                                 Text(book.title, color = LibraryInk, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                if (book.author.isNotBlank()) {
+                                    Text(book.author, color = LibraryMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
                                 Spacer(Modifier.height(4.dp))
                                 Text(categoryLabel(book.categoryId), color = LibraryMuted, fontSize = 12.sp)
                                 if (book.progress > 0) {
