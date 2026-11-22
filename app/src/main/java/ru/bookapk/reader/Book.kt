@@ -91,7 +91,8 @@ data class Book(
     val isFavorite: Boolean = false,
     val lastOpenedAt: Long = 0L,
     val bookmarks: List<ReaderBookmark> = emptyList(),
-    val annotations: List<ReaderAnnotation> = emptyList()
+    val annotations: List<ReaderAnnotation> = emptyList(),
+    val author: String = ""
 ) {
     fun toJson(): JSONObject {
         val bookmarkArray = JSONArray()
@@ -105,6 +106,7 @@ data class Book(
             .put("isFavorite", isFavorite).put("lastOpenedAt", lastOpenedAt)
             .put("bookmarks", bookmarkArray)
             .put("annotations", annotationArray)
+            .put("author", author)
     }
 
     companion object {
@@ -137,7 +139,8 @@ data class Book(
                 isFavorite = json.optBoolean("isFavorite", false),
                 lastOpenedAt = json.optLong("lastOpenedAt", 0L),
                 bookmarks = bookmarks,
-                annotations = annotations
+                annotations = annotations,
+                author = json.optString("author", "")
             )
         }
     }
