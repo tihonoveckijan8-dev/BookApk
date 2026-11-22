@@ -1025,7 +1025,11 @@ private fun ReaderScreen(
                             text = paragraphs[position],
                             note = annotationNote.trim(),
                             color = annotationColor,
-                            createdAt = existing?.createdAt ?: System.currentTimeMillis()
+                            createdAt = existing?.createdAt ?: System.currentTimeMillis(),
+                            // WHY: changing a note or marker color must not erase its spaced-repetition history.
+                            reviewStage = existing?.reviewStage ?: 0,
+                            nextReviewAt = existing?.nextReviewAt ?: 0L,
+                            lastReviewedAt = existing?.lastReviewedAt ?: 0L
                         )
                         if (existing == null) onAddAnnotation(updated) else onUpdateAnnotation(updated)
                     }
