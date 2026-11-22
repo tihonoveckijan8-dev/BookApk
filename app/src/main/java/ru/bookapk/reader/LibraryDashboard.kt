@@ -72,7 +72,9 @@ fun LibraryDashboard(
             else -> matches.reversed()
         }
     }
-    val lastRead = books.filter { it.progress > 0 }.maxByOrNull { it.progress }
+    val startedBooks = books.filter { it.progress > 0 }
+    val lastRead = startedBooks.maxByOrNull { it.lastOpenedAt }
+        ?: startedBooks.maxByOrNull { it.progress }
     val categoryLabel = { id: String -> categories.firstOrNull { it.id == id }?.name ?: "Без категории" }
     // WHY: keep the library visually continuous while the selected appearance changes.
     val canvasTarget = when (visualStyle) { "clay" -> Color(0xFFE8E5DE); "glass" -> Color(0xFFEAF1F2); else -> LibraryCanvas }
