@@ -536,6 +536,8 @@ private fun ReaderScreen(
     var showReaderSettings by remember { mutableStateOf(false) }
     var showBookmarks by remember { mutableStateOf(false) }
     var showContents by remember { mutableStateOf(false) }
+    var showSearch by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
     var showBookmarkDialog by remember { mutableStateOf(false) }
     var bookmarkTitle by remember { mutableStateOf("") }
     var pageCount by remember { mutableIntStateOf(0) }
@@ -618,6 +620,7 @@ private fun ReaderScreen(
                 Text("${fontSize.toInt()} pt", fontSize = 12.sp, color = readerForeground)
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = { showContents = true }) { Text("Главы") }
+                TextButton(onClick = { searchQuery = ""; showSearch = true }) { Text("Поиск") }
                 TextButton(onClick = { showReaderSettings = true }) { Text("Настроить") }
             }
             LazyColumn(
@@ -788,6 +791,57 @@ private fun ReaderScreen(
             dismissButton = {
                 TextButton(onClick = { showBookmarkDialog = false }) { Text("Отмена") }
             }
+        )
+    }
+
+    if (showSearch) {
+        val normalizedQuery = searchQuery.trim()
+        val searchResults = remember(normalizedQuery, paragraphs) {
+            if (normalizedQuery.length < 2) emptyList()
+            else paragraphs.mapIndexedNotNull { index, text ->
+                if (text.contains(normalizedQuery, ignoreCase = true)) index to text else null
+            }.take(200)
+        }
+        AlertDialog(
+            onDismissRequest = { showSearch = false },
+            title = { Text("Поиск по книге") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Слово или фраза") },
+                        singleLine = true
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    when {
+                        normalizedQuery.isEmpty() -> Text("Введите текст для поиска.", color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f))
+                        normalizedQuery.length < 2 -> Text("Введите хотя бы два символа.", color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f))
+                        searchResults.isEmpty() -> Text("Совпадений не найдено.", color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f))
+                        else -> {
+                            Text("Найдено: ${searchResults.size}${if (searchResults.size == 200) "+" else ""}", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                            LazyColumn(Modifier.heightIn(max = 340.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                items(searchResults) { (index, paragraph) ->
+                                    TextButton(
+                                        onClick = {
+                                            readerScope.launch { listState.animateScrollToItem(index) }
+                                            showSearch = false
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Column(Modifier.fillMaxWidth()) {
+                                            Text("Фрагмент ${index + 1}", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                                            Text(paragraph.replace('\\n', ' '), maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showSearch = false }) { Text("Закрыть") } }
         )
     }
 
