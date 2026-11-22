@@ -820,6 +820,8 @@ private fun ReaderScreen(
     var activeReaderTheme by remember(book.id) { mutableStateOf(readerTheme) }
     var showReaderSettings by remember { mutableStateOf(false) }
     var showBookmarks by remember { mutableStateOf(false) }
+    var bookmarkSearch by remember { mutableStateOf("") }
+    var bookmarksByLocation by remember { mutableStateOf(false) }
     var showContents by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
@@ -1697,64 +1699,99 @@ private fun ReaderScreen(
     }
 
     if (showBookmarks) {
+        val visibleBookmarks = book.bookmarks
+            .filter { bookmark ->
+                val query = bookmarkSearch.trim()
+                query.isBlank() ||
+                    bookmark.title.contains(query, ignoreCase = true) ||
+                    bookmark.note.contains(query, ignoreCase = true) ||
+                    (bookmark.position + 1).toString().contains(query)
+            }
+            .let { matches ->
+                if (bookmarksByLocation) matches.sortedBy { it.position }
+                else matches.sortedByDescending { it.createdAt }
+            }
+
         AlertDialog(
             onDismissRequest = { showBookmarks = false },
-            title = { Text("Закладки · ${book.bookmarks.size}") },
+            title = { Text("Закладки · ${visibleBookmarks.size}/${book.bookmarks.size}") },
             text = {
-                if (book.bookmarks.isEmpty()) {
-                    Text("Здесь появятся сохранённые места. Добавьте закладку кнопкой с иконкой книги.")
-                } else {
-                    LazyColumn(Modifier.heightIn(max = 360.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(book.bookmarks.sortedByDescending { it.createdAt }, key = { it.id }) { bookmark ->
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(
-                                    Modifier.weight(1f).clickable {
-                                        if (book.type == "pdf") {
-                                            page = bookmark.position.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
-                                            scale = 1f
-                                        } else {
-                                            readerScope.launch {
-                                                listState.animateScrollToItem(
-                                                    bookmark.position.coerceIn(0, (paragraphs.size - 1).coerceAtLeast(0)),
-                                                    bookmark.offsetPx.coerceAtLeast(0)
-                                                )
-                                            }
-                                        }
-                                        showBookmarks = false
-                                    }.padding(vertical = 9.dp)
-                                ) {
-                                    Text(bookmark.title, fontWeight = FontWeight.SemiBold)
-                                    if (bookmark.note.isNotBlank()) {
-                                        Text(
-                                            bookmark.note,
-                                            fontSize = 12.sp,
-                                            maxLines = 2,
-                                            overflow = TextOverflow.Ellipsis,
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = .72f)
-                                        )
-                                    }
-                                    Text(
-                                        if (book.type == "pdf") "Страница ${bookmark.position + 1}" else "Фрагмент ${bookmark.position + 1}",
-                                        fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = .58f)
-                                    )
-                                }
-                                IconButton(onClick = {
-                                    editingBookmarkId = bookmark.id
-                                    bookmarkTitle = bookmark.title
-                                    bookmarkNote = bookmark.note
-                                    showBookmarkDialog = true
-                                }) {
-                                    Icon(Icons.Rounded.Edit, contentDescription = "Редактировать закладку")
-                                }
-                                IconButton(onClick = { onRemoveBookmark(bookmark.id) }) {
-                                    Icon(Icons.Rounded.DeleteOutline, contentDescription = "Удалить закладку", tint = MaterialTheme.colorScheme.error)
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = bookmarkSearch,
+                        onValueChange = { bookmarkSearch = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text("Найти закладку") },
+                        placeholder = { Text("Название, заметка или номер") },
+                        trailingIcon = {
+                            if (bookmarkSearch.isNotBlank()) {
+                                IconButton(onClick = { bookmarkSearch = "" }) {
+                                    Icon(Icons.Rounded.DeleteOutline, contentDescription = "Очистить поиск")
                                 }
                             }
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .55f))
+                        }
+                    )
+                    TextButton(onClick = { bookmarksByLocation = !bookmarksByLocation }) {
+                        Text(if (bookmarksByLocation) "Сначала ближние к началу" else "Сначала новые")
+                    }
+                    if (book.bookmarks.isEmpty()) {
+                        Text("Здесь появятся сохранённые места. Добавьте закладку кнопкой с иконкой книги.")
+                    } else if (visibleBookmarks.isEmpty()) {
+                        Text("Ничего не найдено. Попробуйте изменить запрос.")
+                    } else {
+                        LazyColumn(Modifier.heightIn(max = 300.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            items(visibleBookmarks, key = { it.id }) { bookmark ->
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(
+                                        Modifier.weight(1f).clickable {
+                                            if (book.type == "pdf") {
+                                                page = bookmark.position.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
+                                                scale = 1f
+                                            } else {
+                                                readerScope.launch {
+                                                    listState.animateScrollToItem(
+                                                        bookmark.position.coerceIn(0, (paragraphs.size - 1).coerceAtLeast(0)),
+                                                        bookmark.offsetPx.coerceAtLeast(0)
+                                                    )
+                                                }
+                                            }
+                                            showBookmarks = false
+                                        }.padding(vertical = 9.dp)
+                                    ) {
+                                        Text(bookmark.title, fontWeight = FontWeight.SemiBold)
+                                        if (bookmark.note.isNotBlank()) {
+                                            Text(
+                                                bookmark.note,
+                                                fontSize = 12.sp,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis,
+                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = .72f)
+                                            )
+                                        }
+                                        Text(
+                                            if (book.type == "pdf") "Страница ${bookmark.position + 1}" else "Фрагмент ${bookmark.position + 1}",
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = .58f)
+                                        )
+                                    }
+                                    IconButton(onClick = {
+                                        editingBookmarkId = bookmark.id
+                                        bookmarkTitle = bookmark.title
+                                        bookmarkNote = bookmark.note
+                                        showBookmarkDialog = true
+                                    }) {
+                                        Icon(Icons.Rounded.Edit, contentDescription = "Редактировать закладку")
+                                    }
+                                    IconButton(onClick = { onRemoveBookmark(bookmark.id) }) {
+                                        Icon(Icons.Rounded.DeleteOutline, contentDescription = "Удалить закладку", tint = MaterialTheme.colorScheme.error)
+                                    }
+                                }
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .55f))
+                            }
                         }
                     }
                 }
