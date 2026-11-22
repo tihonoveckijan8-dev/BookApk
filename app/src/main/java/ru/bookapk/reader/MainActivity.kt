@@ -156,17 +156,20 @@ private fun BookApkApp() {
                         require(ext in setOf("pdf", "txt", "epub", "fb2")) {
                             "Поддерживаются PDF, TXT, EPUB и FB2."
                         }
-                        val destination = if (ext == "epub" || ext == "fb2") {
-                            EbookImporter.convert(context, uri, ext)
+                        val (destination, metadataTitle) = if (ext == "epub" || ext == "fb2") {
+                            val importedBook = EbookImporter.convert(context, uri, ext)
+                            importedBook.file to importedBook.title
                         } else {
                             val target = File(context.filesDir, "books").apply { mkdirs() }
                             val file = File(target, "${UUID.randomUUID()}.$ext")
                             context.contentResolver.openInputStream(uri)?.use { input ->
                                 file.outputStream().use { output -> input.copyTo(output) }
                             } ?: throw IllegalStateException("Не удалось прочитать выбранный файл.")
-                            file
+                            file to null
                         }
-                        Book(UUID.randomUUID().toString(), name.substringBeforeLast('.', name), destination.absolutePath, ext)
+                        val libraryTitle = metadataTitle?.takeIf { it.isNotBlank() }
+                            ?: name.substringBeforeLast('.', name)
+                        Book(UUID.randomUUID().toString(), libraryTitle, destination.absolutePath, ext)
                     }
                     persistBooks(books + imported)
                     activeBook = imported
