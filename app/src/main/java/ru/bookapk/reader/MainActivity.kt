@@ -198,6 +198,7 @@ private fun BookApkApp() {
     var appearance by remember { mutableStateOf(ReaderAppearance()) }
     var showSettings by remember { mutableStateOf(false) }
     var showStats by remember { mutableStateOf(false) }
+    var showLibraryNotes by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var busyMessage by remember { mutableStateOf("Выполняем операцию") }
     var error by remember { mutableStateOf<String?>(null) }
@@ -353,6 +354,17 @@ private fun BookApkApp() {
                     onBack = { showSettings = false },
                     onChange = ::updateAppearance
                 )
+                showLibraryNotes -> LibraryNotesScreen(
+                    books = books,
+                    onBack = { showLibraryNotes = false },
+                    onOpen = { book ->
+                        val openedAt = System.currentTimeMillis()
+                        val updated = books.map { if (it.id == book.id) it.copy(lastOpenedAt = openedAt) else it }
+                        persistBooks(updated)
+                        activeBook = updated.firstOrNull { it.id == book.id }
+                        showLibraryNotes = false
+                    }
+                )
                 activeBook == null -> LibraryDashboard(
                     books = books,
                     categories = categories,
@@ -361,6 +373,7 @@ private fun BookApkApp() {
                     onBackup = { backupLauncher.launch("Моя читалка - резервная копия.zip") },
                     onRestore = { restoreLauncher.launch(arrayOf("application/zip", "application/octet-stream")) },
                     onStatistics = { showStats = true },
+                    onNotes = { showLibraryNotes = true },
                     visualStyle = appearance.visualStyle,
                     onOpen = { book ->
                         val openedAt = System.currentTimeMillis()
