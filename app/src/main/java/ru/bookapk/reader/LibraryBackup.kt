@@ -55,7 +55,7 @@ object LibraryBackup {
         }
 
         val categoryArray = JSONArray()
-        categories.forEach { categoryArray.put(category.toJson()) }
+        categories.forEach { category -> categoryArray.put(category.toJson()) }
         val appearanceJson = JSONObject()
             .put("visualStyle", appearance.visualStyle)
             .put("iconStyle", appearance.iconStyle)
