@@ -192,12 +192,12 @@ object EbookImporter {
     private fun renderEpubInline(node: Node): String {
         if (node is TextNode) return node.wholeText
         if (node !is Element) return node.childNodes().joinToString("") { renderEpubInline(it) }
-        if (node.tagName() == "br") return "\\n"
+        if (node.tagName() == "br") return "\n"
         val content = node.childNodes().joinToString("") { renderEpubInline(it) }
         return when (node.tagName().lowercase()) {
-            "strong", "b" -> if (content.isBlank()) content else "**$content**"
-            "em", "i" -> if (content.isBlank()) content else "*$content*"
-            "u" -> if (content.isBlank()) content else "__$content__"
+            "strong", "b" -> if (content.isBlank()) content else "**${content}**"
+            "em", "i" -> if (content.isBlank()) content else "*${content}*"
+            "u" -> if (content.isBlank()) content else "__${content}__"
             else -> content
         }
     }
@@ -246,7 +246,7 @@ object EbookImporter {
                         .filter { element ->
                             element.parents().none { parent -> parent.tagName() in blockTags }
                         }
-                        .map { renderEpubInline(it).trim().replace(Regex("[ \\t]+"), " ").replace(Regex(" *\\n *"), "\\n") }
+                        .map { renderEpubInline(it).trim().replace(Regex("[ \\t]+"), " ").replace(Regex(" *\\n *"), "\n") }
                         .filter { it.isNotBlank() }
                     val chapterText = (if (blocks.isNotEmpty()) blocks else listOf(body.text().trim()))
                         .filter { it.isNotBlank() }
