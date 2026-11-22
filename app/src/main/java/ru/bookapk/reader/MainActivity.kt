@@ -219,6 +219,16 @@ private fun BookApkApp() {
                         activeBook = updated.firstOrNull { it.id == activeBook!!.id }
                     },
                     visualStyle = appearance.visualStyle,
+                    readerFontSize = appearance.readerFontSize,
+                    readerLineSpacing = appearance.readerLineSpacing,
+                    readerTheme = appearance.readerTheme,
+                    onReaderAppearanceChange = { fontSize, lineSpacing, theme ->
+                        updateAppearance(appearance.copy(
+                            readerFontSize = fontSize,
+                            readerLineSpacing = lineSpacing,
+                            readerTheme = theme
+                        ))
+                    },
                     onBookmark = { position ->
                         val updated = books.map {
                             if (it.id == activeBook!!.id) it.copy(bookmarkPosition = position) else it
@@ -488,12 +498,18 @@ private fun ReaderScreen(
     onPosition: (Int, Int) -> Unit,
     onBookmark: (Int) -> Unit,
     visualStyle: String,
+    readerFontSize: Float,
+    readerLineSpacing: Float,
+    readerTheme: String,
+    onReaderAppearanceChange: (Float, Float, String) -> Unit,
     onError: (String) -> Unit
 ) {
     val context = LocalContext.current
     var text by remember(book.id) { mutableStateOf<String?>(null) }
-    var fontSize by remember { mutableFloatStateOf(18f) }
-    var sepia by remember { mutableStateOf(false) }
+    var fontSize by remember(book.id) { mutableFloatStateOf(readerFontSize) }
+    var lineSpacing by remember(book.id) { mutableFloatStateOf(readerLineSpacing) }
+    var activeReaderTheme by remember(book.id) { mutableStateOf(readerTheme) }
+    var showReaderSettings by remember { mutableStateOf(false) }
     var pageCount by remember { mutableIntStateOf(0) }
     var page by remember(book.id) { mutableIntStateOf(book.readingPosition.coerceAtLeast(0)) }
     var loading by remember { mutableStateOf(true) }
@@ -525,8 +541,18 @@ private fun ReaderScreen(
     val currentTextPosition by remember { derivedStateOf { listState.firstVisibleItemIndex } }
     val savedPosition = if (book.type == "pdf") page else currentTextPosition
     val hasBookmark = book.bookmarkPosition >= 0
+    val readerBackground = when (activeReaderTheme) {
+        "sepia" -> Color(0xFFF1E5CE)
+        "night" -> Color(0xFF171B1C)
+        else -> Color(0xFFFAFAF7)
+    }
+    val readerForeground = when (activeReaderTheme) {
+        "sepia" -> Color(0xFF493E30)
+        "night" -> Color(0xFFE6E9E7)
+        else -> Color(0xFF262B29)
+    }
 
-    Column(Modifier.fillMaxSize().background(if (sepia && book.type == "txt") Color(0xFFF1E5CE) else MaterialTheme.colorScheme.background)) {
+    Column(Modifier.fillMaxSize().background(if (book.type == "txt") readerBackground else MaterialTheme.colorScheme.background)) {
         Row(
             Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 10.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -545,17 +571,19 @@ private fun ReaderScreen(
             IconButton(onClick = { onBookmark(savedPosition) }) {
                 Icon(if (hasBookmark && book.bookmarkPosition == savedPosition) Icons.Rounded.BookmarkAdded else Icons.Rounded.BookmarkBorder, contentDescription = "Сохранить закладку", tint = MaterialTheme.colorScheme.primary)
             }
+            IconButton(onClick = { showReaderSettings = true }) {
+                Icon(Icons.Rounded.Settings, contentDescription = "Настройки чтения")
+            }
         }
 
         if (loading) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         } else if (book.type == "txt") {
             Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { fontSize = (fontSize - 1).coerceAtLeast(14f) }) { Text("A−") }
-                Text("${fontSize.toInt()} pt", fontSize = 12.sp)
-                TextButton(onClick = { fontSize = (fontSize + 1).coerceAtMost(30f) }) { Text("A+") }
+                Text("Размер текста", fontSize = 12.sp, color = readerForeground.copy(alpha = .68f))
+                Text("${fontSize.toInt()} pt", fontSize = 12.sp, color = readerForeground)
                 Spacer(Modifier.weight(1f))
-                TextButton(onClick = { sepia = !sepia }) { Text(if (sepia) "Светлая" else "Сепия") }
+                TextButton(onClick = { showReaderSettings = true }) { Text("Настроить") }
             }
             LazyColumn(
                 state = listState,
@@ -563,7 +591,7 @@ private fun ReaderScreen(
                 contentPadding = PaddingValues(start = 26.dp, end = 26.dp, top = 24.dp, bottom = 70.dp)
             ) {
                 items(paragraphs.size) { index ->
-                    Text(paragraphs[index], fontSize = fontSize.sp, lineHeight = (fontSize * 1.65f).sp, color = if (sepia) Color(0xFF493E30) else MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(bottom = 19.dp))
+                    Text(paragraphs[index], fontSize = fontSize.sp, lineHeight = (fontSize * lineSpacing).sp, color = readerForeground, modifier = Modifier.padding(bottom = 19.dp))
                 }
             }
             LaunchedEffect(listState.firstVisibleItemIndex, paragraphs.size) {
@@ -576,7 +604,7 @@ private fun ReaderScreen(
             Box(
                 Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(when (visualStyle) { "clay" -> Color(0xFFECE9E1); "glass" -> Color(0xDDFBFFFF); else -> Color.White })
+                    .background(readerBackground)
                     .pointerInput(page, pageCount) {
                         detectHorizontalDragGestures(
                             onHorizontalDrag = { _, amount -> dragTotal += amount },
@@ -627,6 +655,53 @@ private fun ReaderScreen(
             }
             Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.Center) {
                 Text("Свайп влево или вправо · щипок для масштаба", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .55f))
+            }
+        }
+    }
+
+    if (showReaderSettings) {
+        ModalBottomSheet(onDismissRequest = { showReaderSettings = false }) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 28.dp)) {
+                Text("Настройки чтения", fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                Text("Комфортный размер и ритм текста", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f), modifier = Modifier.padding(top = 4.dp))
+                Spacer(Modifier.height(22.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Размер шрифта", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                    Text("${fontSize.toInt()} pt", color = MaterialTheme.colorScheme.primary)
+                }
+                Slider(
+                    value = fontSize,
+                    onValueChange = { fontSize = it },
+                    onValueChangeFinished = { onReaderAppearanceChange(fontSize, lineSpacing, activeReaderTheme) },
+                    valueRange = 14f..30f,
+                    steps = 15
+                )
+                Spacer(Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Межстрочный интервал", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                    Text(String.format("%.2f", lineSpacing), color = MaterialTheme.colorScheme.primary)
+                }
+                Slider(
+                    value = lineSpacing,
+                    onValueChange = { lineSpacing = it },
+                    onValueChangeFinished = { onReaderAppearanceChange(fontSize, lineSpacing, activeReaderTheme) },
+                    valueRange = 1.3f..2.2f,
+                    steps = 8
+                )
+                Spacer(Modifier.height(12.dp))
+                Text("Цвет страницы", fontWeight = FontWeight.SemiBold)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 10.dp)) {
+                    listOf("paper" to "Бумага", "sepia" to "Сепия", "night" to "Ночной").forEach { (id, label) ->
+                        FilterChip(
+                            selected = activeReaderTheme == id,
+                            onClick = {
+                                activeReaderTheme = id
+                                onReaderAppearanceChange(fontSize, lineSpacing, id)
+                            },
+                            label = { Text(label) }
+                        )
+                    }
+                }
             }
         }
     }
