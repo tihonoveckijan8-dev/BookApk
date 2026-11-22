@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.pdf.PdfDocument
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
@@ -57,6 +58,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -128,6 +130,33 @@ private fun formatReaderParagraph(value: String): AnnotatedString = buildAnnotat
         }
     }
     flush()
+}
+
+@Composable
+private fun EpubIllustration(path: String) {
+    val bitmap by produceState<Bitmap?>(initialValue = null, key1 = path) {
+        value = withContext(Dispatchers.IO) {
+            val source = File(path)
+            if (!source.isFile) null else {
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(source.absolutePath, bounds)
+                var sample = 1
+                while (bounds.outWidth / sample > 1600 || bounds.outHeight / sample > 2000) sample *= 2
+                BitmapFactory.decodeFile(
+                    source.absolutePath,
+                    BitmapFactory.Options().apply { inSampleSize = sample.coerceAtLeast(1) }
+                )
+            }
+        }
+    }
+    bitmap?.let { image ->
+        Image(
+            bitmap = image.asImageBitmap(),
+            contentDescription = "Иллюстрация книги",
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.fillMaxWidth().heightIn(max = 440.dp).padding(vertical = 12.dp)
+        )
+    }
 }
 
 private val Teal = Color(0xFF087F78)
@@ -211,23 +240,28 @@ private fun BookApkApp() {
                         require(ext in setOf("pdf", "txt", "epub", "fb2")) {
                             "Поддерживаются PDF, TXT, EPUB и FB2."
                         }
-                        val (destination, metadata) = if (ext == "epub" || ext == "fb2") {
+                        val (destination, metadata, imagesDirectory) = if (ext == "epub" || ext == "fb2") {
                             val importedBook = EbookImporter.convert(context, uri, ext)
-                            importedBook.file to Triple(importedBook.title, importedBook.author, importedBook.cover)
+                            Triple(
+                                importedBook.file,
+                                Triple(importedBook.title, importedBook.author, importedBook.cover),
+                                importedBook.imagesDirectory
+                            )
                         } else {
                             val target = File(context.filesDir, "books").apply { mkdirs() }
                             val file = File(target, "${UUID.randomUUID()}.$ext")
                             context.contentResolver.openInputStream(uri)?.use { input ->
                                 file.outputStream().use { output -> input.copyTo(output) }
                             } ?: throw IllegalStateException("Не удалось прочитать выбранный файл.")
-                            file to Triple(null, null, null)
+                            Triple(file, Triple(null, null, null), null)
                         }
                         val libraryTitle = metadata.first?.takeIf { it.isNotBlank() }
                             ?: name.substringBeforeLast('.', name)
                         Book(
                             UUID.randomUUID().toString(), libraryTitle, destination.absolutePath, ext,
                             author = metadata.second.orEmpty(),
-                            coverPath = metadata.third?.absolutePath.orEmpty()
+                            coverPath = metadata.third?.absolutePath.orEmpty(),
+                            imageDirectoryPath = imagesDirectory?.absolutePath.orEmpty()
                         )
                     }
                     persistBooks(books + imported)
@@ -975,7 +1009,11 @@ private fun ReaderScreen(
                         "pink" -> Color(0x55E879A8)
                         else -> Color(0x66F2CF55)
                     }
-                    Text(
+                    val imageName = Regex("""^\[\[BOOK_IMAGE:([A-Za-z0-9._-]+)]]$""")
+                        .matchEntire(paragraphs[index])?.groupValues?.getOrNull(1)
+                    if (imageName != null && book.imageDirectoryPath.isNotBlank()) {
+                        EpubIllustration(File(book.imageDirectoryPath, imageName).absolutePath)
+                    } else Text(
                         formatReaderParagraph(paragraphs[index]),
                         fontSize = if (chapter != null) (fontSize + 4).sp else fontSize.sp,
                         lineHeight = (fontSize * lineSpacing).sp,
