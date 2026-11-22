@@ -206,7 +206,7 @@ fun LibraryStatsScreen(
                                 Text(book.title, color = ink, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(dateFormat.format(Date(book.lastOpenedAt)), color = muted, fontSize = 11.sp)
                             }
-                            Text(${book.progress.coerceIn(0, 100)}%, color = accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Text("${book.progress.coerceIn(0, 100)}%", color = accent, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
