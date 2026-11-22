@@ -28,6 +28,7 @@ import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Book
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -78,6 +79,10 @@ private fun BookApkApp() {
     var categoryToRename by remember { mutableStateOf<String?>(null) }
     var renameDraft by remember { mutableStateOf("") }
     var categoryToDelete by remember { mutableStateOf<String?>(null) }
+    var bookMenuId by remember { mutableStateOf<String?>(null) }
+    var bookToRename by remember { mutableStateOf<Book?>(null) }
+    var bookRenameDraft by remember { mutableStateOf("") }
+    var bookToDelete by remember { mutableStateOf<Book?>(null) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -123,6 +128,33 @@ private fun BookApkApp() {
         scope.launch(Dispatchers.IO) {
             store.saveCategories(updatedCategories)
             store.save(updatedBooks)
+        }
+    }
+
+    fun renameBook(bookId: String, newTitle: String) {
+        val cleanTitle = newTitle.trim()
+        if (cleanTitle.isBlank()) return
+        val updated = books.map { item -> if (item.id == bookId) item.copy(title = cleanTitle) else item }
+        books = updated
+        activeBook = activeBook?.let { current -> updated.firstOrNull { it.id == current.id } ?: current }
+        // WHY: a title is library metadata; changing it must not touch the imported file or reading data.
+        scope.launch(Dispatchers.IO) { store.save(updated) }
+    }
+
+    fun deleteBook(book: Book) {
+        val updated = books.filterNot { it.id == book.id }
+        // WHY: remove only this imported book and its private app copy; unrelated files remain untouched.
+        scope.launch {
+            val file = File(book.path)
+            val libraryDir = File(context.filesDir, "books").canonicalFile
+            val isManagedFile = runCatching { file.canonicalFile.parentFile == libraryDir }.getOrDefault(false)
+            if (isManagedFile && file.exists() && !withContext(Dispatchers.IO) { file.delete() }) {
+                error = "Не удалось удалить файл книги."
+                return@launch
+            }
+            books = updated
+            if (activeBook?.id == book.id) activeBook = null
+            withContext(Dispatchers.IO) { store.save(updated) }
         }
     }
 
@@ -339,6 +371,28 @@ private fun BookApkApp() {
                                         TextButton(onClick = { categoryTargetBook = book }) {
                                             Text("Папка", fontSize = 11.sp)
                                         }
+                                        Box {
+                                            IconButton(onClick = { bookMenuId = book.id }) {
+                                                Icon(Icons.Rounded.MoreVert, contentDescription = "Действия с книгой")
+                                            }
+                                            DropdownMenu(
+                                                expanded = bookMenuId == book.id,
+                                                onDismissRequest = { bookMenuId = null }
+                                            ) {
+                                                DropdownMenuItem(
+                                                    text = { Text("Переименовать") },
+                                                    onClick = {
+                                                        bookToRename = book
+                                                        bookRenameDraft = book.title
+                                                        bookMenuId = null
+                                                    }
+                                                )
+                                                DropdownMenuItem(
+                                                    text = { Text("Удалить из библиотеки", color = Color(0xFFB94A55)) },
+                                                    onClick = { bookToDelete = book; bookMenuId = null }
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -485,6 +539,46 @@ private fun BookApkApp() {
             dismissButton = {
                 TextButton(onClick = { categoryToDelete = null; showManageCategories = true }) { Text("Отмена") }
             }
+        )
+    }
+    bookToRename?.let { target ->
+        AlertDialog(
+            onDismissRequest = { bookToRename = null; bookRenameDraft = "" },
+            title = { Text("Переименовать книгу") },
+            text = {
+                OutlinedTextField(
+                    value = bookRenameDraft,
+                    onValueChange = { bookRenameDraft = it.take(120) },
+                    singleLine = true,
+                    label = { Text("Название") }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = bookRenameDraft.trim().isNotBlank(),
+                    onClick = {
+                        renameBook(target.id, bookRenameDraft)
+                        bookToRename = null
+                        bookRenameDraft = ""
+                    }
+                ) { Text("Сохранить") }
+            },
+            dismissButton = {
+                TextButton(onClick = { bookToRename = null; bookRenameDraft = "" }) { Text("Отмена") }
+            }
+        )
+    }
+    bookToDelete?.let { target ->
+        AlertDialog(
+            onDismissRequest = { bookToDelete = null },
+            title = { Text("Удалить книгу?") },
+            text = { Text("«" + target.title + "» будет удалена из библиотеки вместе с локальной копией файла. Прогресс, заметки и закладки этой книги тоже будут удалены. Действие нельзя отменить.") },
+            confirmButton = {
+                TextButton(onClick = { deleteBook(target); bookToDelete = null }) {
+                    Text("Удалить", color = Color(0xFFB94A55))
+                }
+            },
+            dismissButton = { TextButton(onClick = { bookToDelete = null }) { Text("Отмена") } }
         )
     }
     categoryTargetBook?.let { target ->
