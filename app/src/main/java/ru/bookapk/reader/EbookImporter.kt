@@ -251,7 +251,7 @@ object EbookImporter {
                     val blockTags = setOf("h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "blockquote")
                     document.select("img[src]").forEach { image ->
                         val fileName = extractEpubImage(zip, entryPath, image.attr("src"), imageDirectory, extractedImages)
-                        val marker = fileName?.let { "\\n\\n[[BOOK_IMAGE:$it]]\\n\\n" }
+                        val marker = fileName?.let { "\n\n[[BOOK_IMAGE:$it]]\n\n" }
                             ?: image.attr("alt").takeIf { it.isNotBlank() }.orEmpty()
                         // WHY: a standalone image becomes its own reader paragraph; inline images keep their position.
                         if (image.parents().none { it.tagName() in blockTags }) {
@@ -265,7 +265,7 @@ object EbookImporter {
                         .filter { element ->
                             element.parents().none { parent -> parent.tagName() in blockTags }
                         }
-                        .map { renderEpubInline(it).trim().replace(Regex("[ \\t]+"), " ").replace(Regex(" *\\n *"), "\n") }
+                        .map { renderEpubInline(it).trim().replace(Regex("[ \\t]+"), " ").replace(Regex(" *\n *"), "\n") }
                         .filter { it.isNotBlank() }
                     val chapterText = (if (blocks.isNotEmpty()) blocks else listOf(body.text().trim()))
                         .filter { it.isNotBlank() }
