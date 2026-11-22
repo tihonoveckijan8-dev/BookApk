@@ -39,6 +39,7 @@ import androidx.compose.material.icons.rounded.BookmarkAdded
 import androidx.compose.material.icons.rounded.BookmarkBorder
 import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Settings
@@ -250,6 +251,15 @@ private fun BookApkApp() {
                             if (current.id == activeBook!!.id) current.copy(
                                 bookmarkPosition = position,
                                 bookmarks = current.bookmarks + bookmark
+                            ) else current
+                        }
+                        persistBooks(updated)
+                        activeBook = updated.firstOrNull { it.id == activeBook!!.id }
+                    },
+                    onUpdateBookmark = { edited ->
+                        val updated = books.map { current ->
+                            if (current.id == activeBook!!.id) current.copy(
+                                bookmarks = current.bookmarks.map { if (it.id == edited.id) edited else it }
                             ) else current
                         }
                         persistBooks(updated)
@@ -527,6 +537,7 @@ private fun ReaderScreen(
     onBack: () -> Unit,
     onPosition: (Int, Int, Int) -> Unit,
     onBookmark: (Int, Int, String, String) -> Unit,
+    onUpdateBookmark: (ReaderBookmark) -> Unit,
     onRemoveBookmark: (String) -> Unit,
     visualStyle: String,
     readerFontSize: Float,
@@ -548,6 +559,7 @@ private fun ReaderScreen(
     var showBookmarkDialog by remember { mutableStateOf(false) }
     var bookmarkTitle by remember { mutableStateOf("") }
     var bookmarkNote by remember { mutableStateOf("") }
+    var editingBookmarkId by remember { mutableStateOf<String?>(null) }
     var pageCount by remember { mutableIntStateOf(0) }
     var page by remember(book.id) { mutableIntStateOf(book.readingPosition.coerceAtLeast(0)) }
     var loading by remember { mutableStateOf(true) }
@@ -804,7 +816,7 @@ private fun ReaderScreen(
     if (showBookmarkDialog) {
         AlertDialog(
             onDismissRequest = { showBookmarkDialog = false },
-            title = { Text("Новая закладка") },
+            title = { Text(if (editingBookmarkId == null) "Новая закладка" else "Редактировать закладку") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(
@@ -826,13 +838,26 @@ private fun ReaderScreen(
                 TextButton(
                     enabled = bookmarkTitle.isNotBlank(),
                     onClick = {
-                        onBookmark(savedPosition, savedOffsetPx, bookmarkTitle, bookmarkNote)
+                        val editId = editingBookmarkId
+                        if (editId == null) {
+                            onBookmark(savedPosition, savedOffsetPx, bookmarkTitle, bookmarkNote)
+                        } else {
+                            val original = book.bookmarks.firstOrNull { it.id == editId }
+                            if (original != null) onUpdateBookmark(original.copy(
+                                title = bookmarkTitle.trim(),
+                                note = bookmarkNote.trim()
+                            ))
+                        }
+                        editingBookmarkId = null
                         showBookmarkDialog = false
                     }
                 ) { Text("Сохранить") }
             },
             dismissButton = {
-                TextButton(onClick = { showBookmarkDialog = false }) { Text("Отмена") }
+                TextButton(onClick = {
+                    editingBookmarkId = null
+                    showBookmarkDialog = false
+                }) { Text("Отмена") }
             }
         )
     }
@@ -954,6 +979,14 @@ private fun ReaderScreen(
                                         fontSize = 12.sp,
                                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = .58f)
                                     )
+                                }
+                                IconButton(onClick = {
+                                    editingBookmarkId = bookmark.id
+                                    bookmarkTitle = bookmark.title
+                                    bookmarkNote = bookmark.note
+                                    showBookmarkDialog = true
+                                }) {
+                                    Icon(Icons.Rounded.Edit, contentDescription = "Редактировать закладку")
                                 }
                                 IconButton(onClick = { onRemoveBookmark(bookmark.id) }) {
                                     Icon(Icons.Rounded.DeleteOutline, contentDescription = "Удалить закладку", tint = MaterialTheme.colorScheme.error)
