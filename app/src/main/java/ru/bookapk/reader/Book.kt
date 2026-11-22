@@ -66,7 +66,7 @@ data class Book(
 ) {
     fun toJson(): JSONObject {
         val bookmarkArray = JSONArray()
-        bookmarks.forEach { bookmarkArray.put(bookmark.toJson()) }
+        bookmarks.forEach { bookmark -> bookmarkArray.put(bookmark.toJson()) }
         val noteArray = JSONArray()
         notes.forEach { noteArray.put(it.toJson()) }
         return JSONObject()
