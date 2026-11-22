@@ -43,5 +43,8 @@ data class Book(
 
 data class ReaderAppearance(
     val visualStyle: String = "classic",
-    val iconStyle: String = "classic"
+    val iconStyle: String = "classic",
+    val readerFontSize: Float = 18f,
+    val readerLineSpacing: Float = 1.65f,
+    val readerTheme: String = "paper"
 )
