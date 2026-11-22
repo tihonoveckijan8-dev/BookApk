@@ -1071,59 +1071,95 @@ private fun ReaderScreen(
                         }
                         val filteredAnnotations = book.annotations
                             .filter { annotationFilter == "all" || it.color == annotationFilter }
-                            .sortedByDescending { it.createdAt }
-                        LazyColumn(Modifier.heightIn(max = 340.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            items(filteredAnnotations, key = { it.id }) { item ->
-                            val marker = when (item.color) {
-                                "green" -> Color(0xFF3CBF83)
-                                "blue" -> Color(0xFF4A91E8)
-                                "pink" -> Color(0xFFE879A8)
-                                else -> Color(0xFFE7BD35)
+                            .sortedBy { it.position }
+                        // WHY: grouping by the parsed chapter start keeps repeated chapter titles separate.
+                        val annotationGroups = filteredAnnotations
+                            .groupBy { annotation ->
+                                txtDocument.chapters.lastOrNull {
+                                    it.startParagraph <= annotation.position
+                                } ?: TxtChapter("Начало", 0)
                             }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Column(
-                                    Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
-                                        .clickable {
-                                            readerScope.launch {
-                                                listState.animateScrollToItem(
-                                                    item.position.coerceIn(0, (paragraphs.size - 1).coerceAtLeast(0)),
-                                                    item.offsetPx.coerceAtLeast(0)
-                                                )
-                                            }
-                                            showAnnotations = false
-                                        }
-                                        .padding(vertical = 9.dp, horizontal = 8.dp)
-                                ) {
-                                    Text(
-                                        item.text.replace('\n', ' '),
-                                        fontSize = 12.sp,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                    if (item.note.isNotBlank()) {
-                                        Text(item.note, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .68f))
+                            .toList()
+                            .sortedBy { it.first.startParagraph }
+
+                        LazyColumn(
+                            Modifier.heightIn(max = 340.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            annotationGroups.forEach { (chapter, chapterAnnotations) ->
+                                item(key = "chapter-header-${chapter.startParagraph}") {
+                                    Row(
+                                        Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 2.dp, start = 8.dp, end = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            chapter.title,
+                                            modifier = Modifier.weight(1f),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            "${chapterAnnotations.size}",
+                                            fontSize = 10.sp,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = .58f)
+                                        )
                                     }
-                                    Text("Фрагмент ${item.position + 1}", fontSize = 10.sp, color = marker)
                                 }
-                                IconButton(onClick = {
-                                    pendingAnnotationPosition = item.position
-                                    pendingAnnotationOffset = item.offsetPx
-                                    editingAnnotationId = item.id
-                                    annotationNote = item.note
-                                    annotationColor = item.color
-                                    showAnnotations = false
-                                    showAnnotationDialog = true
-                                }) {
-                                    Icon(Icons.Rounded.Edit, contentDescription = "Редактировать заметку")
-                                }
-                                IconButton(onClick = { onRemoveAnnotation(item.id) }) {
-                                    Icon(Icons.Rounded.DeleteOutline, contentDescription = "Удалить заметку", tint = MaterialTheme.colorScheme.error)
+                                items(chapterAnnotations, key = { it.id }) { item ->
+                                    val marker = when (item.color) {
+                                        "green" -> Color(0xFF3CBF83)
+                                        "blue" -> Color(0xFF4A91E8)
+                                        "pink" -> Color(0xFFE879A8)
+                                        else -> Color(0xFFE7BD35)
+                                    }
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Column(
+                                            Modifier.weight(1f).clip(RoundedCornerShape(8.dp))
+                                                .clickable {
+                                                    readerScope.launch {
+                                                        listState.animateScrollToItem(
+                                                            item.position.coerceIn(0, (paragraphs.size - 1).coerceAtLeast(0)),
+                                                            item.offsetPx.coerceAtLeast(0)
+                                                        )
+                                                    }
+                                                    showAnnotations = false
+                                                }
+                                                .padding(vertical = 9.dp, horizontal = 8.dp)
+                                        ) {
+                                            Text(
+                                                item.text.replace('\\n', ' '),
+                                                fontSize = 12.sp,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                            if (item.note.isNotBlank()) {
+                                                Text(item.note, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .68f))
+                                            }
+                                            Text("Фрагмент ${item.position + 1}", fontSize = 10.sp, color = marker)
+                                        }
+                                        IconButton(onClick = {
+                                            pendingAnnotationPosition = item.position
+                                            pendingAnnotationOffset = item.offsetPx
+                                            editingAnnotationId = item.id
+                                            annotationNote = item.note
+                                            annotationColor = item.color
+                                            showAnnotations = false
+                                            showAnnotationDialog = true
+                                        }) {
+                                            Icon(Icons.Rounded.Edit, contentDescription = "Редактировать заметку")
+                                        }
+                                        IconButton(onClick = { onRemoveAnnotation(item.id) }) {
+                                            Icon(Icons.Rounded.DeleteOutline, contentDescription = "Удалить заметку", tint = MaterialTheme.colorScheme.error)
+                                        }
+                                    }
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f))
                                 }
                             }
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f))
                         }
-                    }
                 }
                     }
             },
