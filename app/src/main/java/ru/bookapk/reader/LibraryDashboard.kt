@@ -240,7 +240,7 @@ fun LibraryDashboard(
                     Icon(Icons.Rounded.AutoStories, null, tint = Color(0xFF9ABCB1), modifier = Modifier.size(54.dp))
                     Spacer(Modifier.height(12.dp))
                     Text(if (books.isEmpty()) "Ваша библиотека пока пуста" else "В этой категории пока нет книг", color = LibraryInk, fontWeight = FontWeight.SemiBold)
-                    Text("Добавьте PDF или TXT с устройства", color = LibraryMuted, fontSize = 13.sp)
+                    Text("Добавьте PDF, TXT, EPUB или FB2 с устройства", color = LibraryMuted, fontSize = 13.sp)
                     Spacer(Modifier.height(15.dp))
                     Button(onClick = onImport, colors = ButtonDefaults.buttonColors(containerColor = accent)) { Text("Добавить книгу") }
                 }
