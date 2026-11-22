@@ -2,6 +2,7 @@ package ru.bookapk.reader
 
 import android.content.Context
 import android.net.Uri
+import android.util.Base64
 import android.util.Xml
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
@@ -25,13 +26,13 @@ object EbookImporter {
     fun convert(context: Context, source: Uri, format: String): ImportedEbook {
         val outputDirectory = File(context.filesDir, "books").apply { mkdirs() }
         val output = File(outputDirectory, "${java.util.UUID.randomUUID()}.txt")
-        val imageDirectory = if (format.equals("epub", true)) {
+        val imageDirectory = if (format.equals("epub", true) || format.equals("fb2", true)) {
             File(context.filesDir, "ebook-images/${java.util.UUID.randomUUID()}").apply { mkdirs() }
         } else null
         try {
             val text = when (format.lowercase()) {
                 "epub" -> readEpub(context, source, imageDirectory!!)
-                "fb2" -> readFb2(context, source)
+                "fb2" -> readFb2(context, source, imageDirectory!!)
                 else -> throw IllegalArgumentException("Формат электронной книги не поддерживается.")
             }
             require(text.isNotBlank()) { "В книге не найден читаемый текст." }
@@ -390,7 +391,10 @@ object EbookImporter {
         return result
     }
 
-    private fun readFb2(context: Context, source: Uri): String {
+    private fun readFb2(context: Context, source: Uri, imageDirectory: File): String {
+        // WHY: FB2 stores illustration bytes in <binary> elements, commonly after the main text body.
+        // Extract them in a first pass so references inside paragraphs can be rendered in reading order.
+        val images = extractFb2Images(context, source, imageDirectory)
         val input = context.contentResolver.openInputStream(source)
             ?: throw IllegalStateException("Не удалось открыть FB2-файл.")
         val parser = Xml.newPullParser()
@@ -404,27 +408,25 @@ object EbookImporter {
         while (parser.eventType != XmlPullParser.END_DOCUMENT) {
             when (parser.eventType) {
                 XmlPullParser.START_TAG -> {
-                    when (parser.name.lowercase()) {
+                    when (parser.name.substringAfter(':').lowercase()) {
                         "body" -> {
                             val bodyName = parser.getAttributeValue(null, "name")
                             inBody = bodyName.isNullOrBlank() || bodyName.equals("main", true)
                             skipBody = !inBody
                         }
-                        "section" -> if (inBody && !skipBody) {
-                            sectionDepth++
-                        }
+                        "section" -> if (inBody && !skipBody) sectionDepth++
                         "title" -> if (inBody && !skipBody && sectionDepth > 0) {
                             val title = readElementText(parser)
                             if (title.isNotBlank()) result.appendLine().appendLine(title).appendLine()
                         }
                         "p", "subtitle", "v", "text-author" -> if (inBody && !skipBody) {
-                            val value = readElementText(parser).trim()
+                            val value = readFb2TextWithImages(parser, images).trim()
                             if (value.isNotBlank()) result.appendLine(value).appendLine()
                         }
                         "empty-line" -> if (inBody && !skipBody) result.appendLine()
                     }
                 }
-                XmlPullParser.END_TAG -> when (parser.name.lowercase()) {
+                XmlPullParser.END_TAG -> when (parser.name.substringAfter(':').lowercase()) {
                     "section" -> if (inBody && sectionDepth > 0) sectionDepth--
                     "body" -> { inBody = false; skipBody = false }
                 }
@@ -433,6 +435,73 @@ object EbookImporter {
         }
         input.close()
         return result.toString().trim()
+    }
+
+    private fun extractFb2Images(context: Context, source: Uri, directory: File): Map<String, String> {
+        val input = context.contentResolver.openInputStream(source)
+            ?: throw IllegalStateException("Не удалось открыть FB2-файл.")
+        val parser = Xml.newPullParser()
+        parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
+        parser.setInput(input, null)
+        val extracted = linkedMapOf<String, String>()
+        var totalBytes = 0L
+
+        input.use {
+            while (parser.eventType != XmlPullParser.END_DOCUMENT) {
+                if (parser.eventType == XmlPullParser.START_TAG &&
+                    parser.name.substringAfter(':').equals("binary", true)
+                ) {
+                    val id = (0 until parser.attributeCount)
+                        .firstOrNull { parser.getAttributeName(it).equals("id", true) }
+                        ?.let { parser.getAttributeValue(it) }
+                    val mediaType = (0 until parser.attributeCount)
+                        .firstOrNull { parser.getAttributeName(it).equals("content-type", true) }
+                        ?.let { parser.getAttributeValue(it) }.orEmpty().lowercase()
+                    val encoded = readElementText(parser)
+                    if (!id.isNullOrBlank() && id.length <= 200 && extracted.size < 200) {
+                        val extension = when (mediaType) {
+                            "image/jpeg", "image/jpg" -> "jpg"
+                            "image/png" -> "png"
+                            "image/webp" -> "webp"
+                            "image/gif" -> "gif"
+                            else -> null
+                        }
+                        if (extension != null) {
+                            runCatching {
+                                val bytes = Base64.decode(encoded, Base64.DEFAULT)
+                                require(bytes.isNotEmpty() && bytes.size <= 12 * 1024 * 1024)
+                                require(totalBytes + bytes.size <= 80L * 1024L * 1024L)
+                                val name = "image-" + (extracted.size + 1).toString().padStart(4, '0') + "." + extension
+                                File(directory, name).writeBytes(bytes)
+                                totalBytes += bytes.size
+                                extracted[id] = name
+                            }
+                        }
+                    }
+                }
+                parser.next()
+            }
+        }
+        return extracted
+    }
+
+    private fun readFb2TextWithImages(parser: XmlPullParser, images: Map<String, String>): String {
+        val depth = parser.depth
+        val value = StringBuilder()
+        while (parser.next() != XmlPullParser.END_DOCUMENT) {
+            when (parser.eventType) {
+                XmlPullParser.START_TAG -> if (parser.name.substringAfter(':').equals("image", true)) {
+                    val href = (0 until parser.attributeCount)
+                        .firstOrNull { parser.getAttributeName(it).equals("href", true) }
+                        ?.let { parser.getAttributeValue(it) }.orEmpty()
+                    val imageName = images[href.removePrefix("#")]
+                    if (imageName != null) value.append(" [[BOOK_IMAGE:").append(imageName).append("]] ")
+                }
+                XmlPullParser.TEXT, XmlPullParser.CDSECT -> value.append(parser.text).append(' ')
+                XmlPullParser.END_TAG -> if (parser.depth == depth) break
+            }
+        }
+        return value.toString().replace(Regex("\\s+"), " ").trim()
     }
 
     private fun readElementText(parser: XmlPullParser): String {
