@@ -13,7 +13,7 @@ data class TxtDocument(
 
 object TxtBookParser {
     private val chapterMarker = Regex(
-        """^(?:#{1,3}\\s+.+|(?:глава|часть|книга|раздел|chapter|part|book|section)\\s+(?:[\\dIVXLCDM]+|[А-ЯЁA-Z][\\w-]*)(?:[.:—–-].*)?|пролог|эпилог|послесловие)\\s*$""",
+        """^(?:#{1,3}\s+.+|(?:глава|часть|книга|раздел|chapter|part|book|section)\s+(?:[\dIVXLCDM]+|[А-ЯЁA-Z][\w-]*)(?:[.:—–-].*)?|пролог|эпилог|послесловие)\s*$""",
         RegexOption.IGNORE_CASE
     )
 
@@ -37,7 +37,7 @@ object TxtBookParser {
                 flushParagraph()
             } else if (chapterMarker.matches(line)) {
                 flushParagraph()
-                val title = line.replace(Regex("^#{1,3}\\s*"), "").trim()
+                val title = line.replace(Regex("^#{1,3}\s*"), "").trim()
                 val index = paragraphs.size
                 paragraphs += title
                 chapters += TxtChapter(title, index)
