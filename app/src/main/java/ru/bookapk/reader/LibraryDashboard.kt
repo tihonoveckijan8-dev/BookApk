@@ -1,0 +1,420 @@
+package ru.bookapk.reader
+
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.AutoStories
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.Sort
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import java.util.UUID
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+private val LibraryTeal = Color(0xFF087F78)
+private val LibraryInk = Color(0xFF202522)
+private val LibraryMuted = Color(0xFF7C8781)
+private val LibraryCanvas = Color(0xFFF6F5F0)
+
+@Composable
+fun LibraryDashboard(
+    books: List<Book>,
+    categories: List<BookCategory>,
+    onImport: () -> Unit,
+    onSettings: () -> Unit,
+    onBackup: () -> Unit,
+    onRestore: () -> Unit,
+    onStatistics: () -> Unit,
+    onNotes: () -> Unit,
+    visualStyle: String,
+    onOpen: (Book) -> Unit,
+    onCategoryCreate: (BookCategory) -> Unit,
+    onCategoryDelete: (BookCategory) -> Unit,
+    onBookCategoryChange: (Book, String) -> Unit,
+    onBookDelete: (Book) -> Unit,
+    onBookFavoriteChange: (Book) -> Unit
+) {
+    var query by remember { mutableStateOf("") }
+    var selectedCategory by remember { mutableStateOf<String?>(null) }
+    var showCategoryDialog by remember { mutableStateOf(false) }
+    var categoryName by remember { mutableStateOf("") }
+    var favoritesOnly by remember { mutableStateOf(false) }
+    var sortMode by remember { mutableStateOf("Добавления") }
+    var sortExpanded by remember { mutableStateOf(false) }
+    var libraryActionsExpanded by remember { mutableStateOf(false) }
+
+    val filtered = books.filter { book ->
+        (book.title.contains(query, ignoreCase = true) || book.author.contains(query, ignoreCase = true)) &&
+            (selectedCategory == null || book.categoryId == selectedCategory) &&
+            (!favoritesOnly || book.isFavorite)
+    }.let { matches ->
+        when (sortMode) {
+            "Название" -> matches.sortedBy { it.title.lowercase() }
+            "Прогресс" -> matches.sortedByDescending { it.progress }
+            else -> matches.reversed()
+        }
+    }
+    val startedBooks = books.filter { it.progress > 0 }
+    val lastRead = startedBooks.maxByOrNull { it.lastOpenedAt }
+        ?: startedBooks.maxByOrNull { it.progress }
+    val categoryLabel = { id: String -> categories.firstOrNull { it.id == id }?.name ?: "Без категории" }
+    // WHY: keep the library visually continuous while the selected appearance changes.
+    val canvasTarget = when (visualStyle) { "clay" -> Color(0xFFE8E5DE); "glass" -> Color(0xFFEAF1F2); else -> LibraryCanvas }
+    val cardTarget = when (visualStyle) { "clay" -> Color(0xFFECE9E1); "glass" -> Color(0xDDFBFFFF); else -> Color.White }
+    val canvas by animateColorAsState(canvasTarget, tween(440), label = "library-canvas")
+    val cardSurface by animateColorAsState(cardTarget, tween(380), label = "library-cards")
+    val accent by animateColorAsState(
+        when (visualStyle) { "clay" -> Color(0xFF426D68); "glass" -> Color(0xFF376F78); else -> LibraryTeal },
+        tween(420), label = "library-accent"
+    )
+
+    Column(
+        Modifier.fillMaxSize().background(canvas).statusBarsPadding()
+            .padding(horizontal = 20.dp)
+    ) {
+        Spacer(Modifier.height(16.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Моя читалка", fontSize = 29.sp, fontWeight = FontWeight.Bold, color = LibraryInk)
+                Text("Личное пространство для чтения", color = LibraryMuted, fontSize = 13.sp)
+            }
+            Box {
+                IconButton(onClick = { libraryActionsExpanded = true }) {
+                    Icon(Icons.Rounded.MoreVert, contentDescription = "Действия с библиотекой", tint = LibraryMuted)
+                }
+                DropdownMenu(
+                    expanded = libraryActionsExpanded,
+                    onDismissRequest = { libraryActionsExpanded = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Создать резервную копию") },
+                        onClick = { libraryActionsExpanded = false; onBackup() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Восстановить из копии") },
+                        onClick = { libraryActionsExpanded = false; onRestore() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Статистика чтения") },
+                        onClick = { libraryActionsExpanded = false; onStatistics() }
+                    )
+                }
+            }
+            IconButton(onClick = onSettings) { Icon(Icons.Rounded.Settings, contentDescription = "Настройки оформления", tint = LibraryMuted) }
+            TextButton(onClick = onNotes, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                Text("Заметки", color = LibraryTeal, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
+            FilledIconButton(
+                onClick = onImport,
+                colors = IconButtonDefaults.filledIconButtonColors(containerColor = accent)
+            ) { Icon(Icons.Rounded.Add, contentDescription = "Добавить книгу", tint = Color.White) }
+        }
+        Spacer(Modifier.height(18.dp))
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            placeholder = { Text("Название книги или файла") },
+            leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = "Поиск") },
+            shape = RoundedCornerShape(18.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = accent,
+                unfocusedBorderColor = if (visualStyle == "glass") Color.White.copy(alpha = .8f) else Color(0xFFE5E6E0),
+                focusedContainerColor = cardSurface,
+                unfocusedContainerColor = cardSurface
+            )
+        )
+        Spacer(Modifier.height(14.dp))
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            FilterChip(
+                selected = selectedCategory == null,
+                onClick = { selectedCategory = null },
+                label = { Text("Все книги · ${books.size}") }
+            )
+            FilterChip(
+                selected = favoritesOnly,
+                onClick = { favoritesOnly = !favoritesOnly },
+                label = { Text("Избранное · ${books.count { it.isFavorite }}") },
+                leadingIcon = { Icon(Icons.Rounded.Favorite, null, modifier = Modifier.size(16.dp)) }
+            )
+            categories.forEach { category ->
+                FilterChip(
+                    selected = selectedCategory == category.id,
+                    onClick = { selectedCategory = category.id },
+                    label = { Text(category.name) }
+                )
+            }
+            FilledTonalIconButton(
+                onClick = { showCategoryDialog = true },
+                modifier = Modifier.size(38.dp),
+                colors = IconButtonDefaults.filledTonalIconButtonColors(contentColor = accent)
+            ) { Icon(Icons.Rounded.FolderOpen, contentDescription = "Управление категориями") }
+        }
+
+        if (lastRead != null && query.isBlank() && selectedCategory == null && !favoritesOnly) {
+            Spacer(Modifier.height(16.dp))
+            Text("ВОЗВРАЩАЙТЕСЬ К ЧТЕНИЮ", fontSize = 10.sp, letterSpacing = 1.3.sp, fontWeight = FontWeight.Bold, color = accent)
+            Spacer(Modifier.height(8.dp))
+            Card(
+                onClick = { onOpen(lastRead) },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(containerColor = if (visualStyle == "classic") Color(0xFFE2F0EC) else cardSurface)
+            ) {
+                Row(Modifier.padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
+                    BookCover(lastRead, accent, Modifier.size(54.dp, 68.dp))
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(lastRead.title, fontWeight = FontWeight.Bold, color = LibraryInk, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (lastRead.author.isNotBlank()) {
+                            Text(lastRead.author, color = LibraryMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        Text("${categoryLabel(lastRead.categoryId)} · ${lastRead.progress}% прочитано", color = LibraryMuted, fontSize = 12.sp)
+                        Spacer(Modifier.height(9.dp))
+                        LinearProgressIndicator(
+                            progress = { (lastRead.progress / 100f).coerceIn(0f, 1f) },
+                            modifier = Modifier.fillMaxWidth().height(5.dp),
+                            color = accent,
+                            trackColor = Color(0xFFC9DDD5)
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(19.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                when {
+                    favoritesOnly -> "Избранное"
+                    selectedCategory != null -> categoryLabel(selectedCategory!!)
+                    else -> "Библиотека"
+                },
+                fontSize = 20.sp, fontWeight = FontWeight.Bold, color = LibraryInk, modifier = Modifier.weight(1f)
+            )
+            Text("${filtered.size} книг", color = LibraryMuted, fontSize = 12.sp)
+            Box {
+                IconButton(onClick = { sortExpanded = true }) {
+                    Icon(Icons.Rounded.Sort, contentDescription = "Сортировка", tint = LibraryMuted)
+                }
+                DropdownMenu(expanded = sortExpanded, onDismissRequest = { sortExpanded = false }) {
+                    listOf("Добавления", "Название", "Прогресс").forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option) },
+                            onClick = { sortMode = option; sortExpanded = false },
+                            trailingIcon = { if (sortMode == option) Icon(Icons.Rounded.Check, null) }
+                        )
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+
+        if (filtered.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Rounded.AutoStories, null, tint = Color(0xFF9ABCB1), modifier = Modifier.size(54.dp))
+                    Spacer(Modifier.height(12.dp))
+                    Text(if (books.isEmpty()) "Ваша библиотека пока пуста" else "В этой категории пока нет книг", color = LibraryInk, fontWeight = FontWeight.SemiBold)
+                    Text("Добавьте PDF, TXT, EPUB или FB2 с устройства", color = LibraryMuted, fontSize = 13.sp)
+                    Spacer(Modifier.height(15.dp))
+                    Button(onClick = onImport, colors = ButtonDefaults.buttonColors(containerColor = accent)) { Text("Добавить книгу") }
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(bottom = 28.dp)
+            ) {
+                items(filtered, key = { it.id }) { book ->
+                    var menuExpanded by remember(book.id) { mutableStateOf(false) }
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(19.dp),
+                        colors = CardDefaults.cardColors(containerColor = cardSurface),
+                        elevation = CardDefaults.cardElevation(defaultElevation = if (visualStyle == "clay") 5.dp else 1.dp),
+                        border = if (visualStyle == "glass") androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = .85f)) else null
+                    ) {
+                        Row(
+                            Modifier.padding(start = 12.dp, end = 7.dp, top = 12.dp, bottom = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            BookCover(book, accent, Modifier.size(54.dp, 70.dp))
+                            Spacer(Modifier.width(13.dp))
+                            Column(
+                                Modifier.weight(1f).clickable { onOpen(book) }
+                            ) {
+                                Text(book.title, color = LibraryInk, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                if (book.author.isNotBlank()) {
+                                    Text(book.author, color = LibraryMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                Text(categoryLabel(book.categoryId), color = LibraryMuted, fontSize = 12.sp)
+                                if (book.progress > 0) {
+                                    Spacer(Modifier.height(7.dp))
+                                    LinearProgressIndicator(
+                                        progress = { (book.progress / 100f).coerceIn(0f, 1f) },
+                                        modifier = Modifier.fillMaxWidth().height(4.dp),
+                                        color = accent
+                                    )
+                                }
+                            }
+                            IconButton(onClick = { onBookFavoriteChange(book) }) {
+                                Icon(
+                                    if (book.isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                                    contentDescription = if (book.isFavorite) "Убрать из избранного" else "В избранное",
+                                    tint = if (book.isFavorite) Color(0xFFC65D62) else LibraryMuted
+                                )
+                            }
+                            Box {
+                                IconButton(onClick = { menuExpanded = true }) {
+                                    Icon(Icons.Rounded.MoreVert, contentDescription = "Действия с книгой", tint = LibraryMuted)
+                                }
+                                DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                                    categories.forEach { category ->
+                                        DropdownMenuItem(
+                                            text = { Text("В категорию: ${category.name}") },
+                                            onClick = {
+                                                onBookCategoryChange(book, category.id)
+                                                menuExpanded = false
+                                            }
+                                        )
+                                    }
+                                    DropdownMenuItem(
+                                        text = { Text("Без категории") },
+                                        onClick = { onBookCategoryChange(book, ""); menuExpanded = false }
+                                    )
+                                    HorizontalDivider()
+                                    DropdownMenuItem(
+                                        text = { Text("Удалить из библиотеки", color = MaterialTheme.colorScheme.error) },
+                                        leadingIcon = { Icon(Icons.Rounded.DeleteOutline, null, tint = MaterialTheme.colorScheme.error) },
+                                        onClick = { onBookDelete(book); menuExpanded = false }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showCategoryDialog) {
+        AlertDialog(
+            onDismissRequest = { showCategoryDialog = false; categoryName = "" },
+            title = { Text("Категории библиотеки") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = categoryName,
+                        onValueChange = { categoryName = it },
+                        label = { Text("Новая категория") },
+                        placeholder = { Text("Например, Фантастика") },
+                        singleLine = true
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    categories.forEach { category ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(category.name, Modifier.weight(1f), color = LibraryInk)
+                            IconButton(onClick = { if (selectedCategory == category.id) selectedCategory = null; onCategoryDelete(category) }) {
+                                Icon(Icons.Rounded.DeleteOutline, contentDescription = "Удалить категорию", tint = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = categoryName.isNotBlank() && categories.none { it.name.equals(categoryName.trim(), true) },
+                    onClick = {
+                        onCategoryCreate(BookCategory(UUID.randomUUID().toString(), categoryName.trim()))
+                        categoryName = ""
+                    }
+                ) { Text("Добавить") }
+            },
+            dismissButton = { TextButton(onClick = { showCategoryDialog = false; categoryName = "" }) { Text("Готово") } }
+        )
+    }
+}
+
+
+@Composable
+private fun BookCover(book: Book, accent: Color, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(9.dp)
+    val bitmap by produceState<android.graphics.Bitmap?>(initialValue = null, key1 = book.coverPath) {
+        value = withContext(Dispatchers.IO) {
+            val path = book.coverPath
+            if (path.isBlank()) null else runCatching {
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(path, bounds)
+                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
+                var sampleSize = 1
+                while (bounds.outWidth / sampleSize > 640 || bounds.outHeight / sampleSize > 900) {
+                    sampleSize *= 2
+                }
+                BitmapFactory.decodeFile(
+                    path,
+                    BitmapFactory.Options().apply { inSampleSize = sampleSize }
+                )
+            }.getOrNull()
+        }
+    }
+    Box(
+        modifier.clip(shape).background(
+            if (book.type == "pdf") Color(0xFFECE8DE) else Color(0xFFDDEFE9)
+        ),
+        contentAlignment = Alignment.Center
+    ) {
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap!!.asImageBitmap(),
+                contentDescription = "Обложка: ${book.title}",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        } else {
+            Text(
+                book.type.uppercase(),
+                color = accent,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 12.sp
+            )
+        }
+    }
+}
