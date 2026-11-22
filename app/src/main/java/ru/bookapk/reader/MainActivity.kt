@@ -591,6 +591,9 @@ private fun ReaderScreen(
     var bookmarkNote by remember { mutableStateOf("") }
     var editingBookmarkId by remember { mutableStateOf<String?>(null) }
     var showAnnotations by remember { mutableStateOf(false) }
+    var showStudyCards by remember { mutableStateOf(false) }
+    var studyCardIndex by remember { mutableIntStateOf(0) }
+    var studyCardRevealed by remember { mutableStateOf(false) }
     var annotationFilter by remember { mutableStateOf("all") }
     var editingAnnotationId by remember { mutableStateOf<String?>(null) }
     var showAnnotationDialog by remember { mutableStateOf(false) }
@@ -1045,6 +1048,18 @@ private fun ReaderScreen(
                     Text("Пока нет заметок. Удерживайте абзац в тексте, чтобы выделить его цветом и добавить комментарий.")
                 } else {
                     Column {
+                        OutlinedButton(
+                            onClick = {
+                                studyCardIndex = 0
+                                studyCardRevealed = false
+                                showAnnotations = false
+                                showStudyCards = true
+                            },
+                            enabled = book.annotations.isNotEmpty(),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Карточки для повторения · ${book.annotations.size}")
+                        }
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             listOf("all" to "Все", "yellow" to "Жёлтые", "green" to "Зелёные", "blue" to "Синие", "pink" to "Розовые").forEach { (id, label) ->
                                 FilterChip(
@@ -1138,6 +1153,115 @@ private fun ReaderScreen(
                 }
             }
         )
+    }
+
+    if (showStudyCards) {
+        val studyCards = book.annotations.sortedWith(
+            compareBy<ReaderAnnotation> { it.position }.thenBy { it.createdAt }
+        )
+        if (studyCards.isNotEmpty()) {
+            val safeIndex = studyCardIndex.coerceIn(0, studyCards.lastIndex)
+            val card = studyCards[safeIndex]
+            val chapterTitle = txtDocument.chapters.lastOrNull {
+                it.startParagraph <= card.position
+            }?.title ?: "Начало"
+            val marker = when (card.color) {
+                "green" -> Color(0xFF3CBF83)
+                "blue" -> Color(0xFF4A91E8)
+                "pink" -> Color(0xFFE879A8)
+                else -> Color(0xFFE7BD35)
+            }
+
+            AlertDialog(
+                onDismissRequest = { showStudyCards = false },
+                title = { Text("Повторение · ${safeIndex + 1} из ${studyCards.size}") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        LinearProgressIndicator(
+                            progress = { (safeIndex + 1).toFloat() / studyCards.size.toFloat() },
+                            modifier = Modifier.fillMaxWidth(),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(18.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        ) {
+                            Column(
+                                Modifier.fillMaxWidth().padding(18.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Text(
+                                    chapterTitle,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    "Фрагмент ${card.position + 1}",
+                                    color = marker,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    card.text,
+                                    fontSize = 15.sp,
+                                    lineHeight = 22.sp,
+                                    maxLines = 9,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                                if (studyCardRevealed) {
+                                    Text("ЗАМЕТКА", fontSize = 10.sp, letterSpacing = 1.2.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        card.note.ifBlank { "К этому фрагменту пока не добавлен комментарий." },
+                                        fontSize = 14.sp,
+                                        lineHeight = 20.sp
+                                    )
+                                } else {
+                                    Text(
+                                        "Попробуйте вспомнить, почему вы отметили этот фрагмент. Затем откройте заметку.",
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = .68f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        TextButton(
+                            enabled = safeIndex > 0,
+                            onClick = {
+                                studyCardIndex = safeIndex - 1
+                                studyCardRevealed = false
+                            }
+                        ) { Text("Назад") }
+                        TextButton(onClick = { studyCardRevealed = !studyCardRevealed }) {
+                            Text(if (studyCardRevealed) "Скрыть" else "Ответ")
+                        }
+                        TextButton(onClick = {
+                            if (safeIndex == studyCards.lastIndex) {
+                                showStudyCards = false
+                            } else {
+                                studyCardIndex = safeIndex + 1
+                                studyCardRevealed = false
+                            }
+                        }) { Text(if (safeIndex == studyCards.lastIndex) "Готово" else "Далее") }
+                    }
+                }
+            )
+        } else {
+            AlertDialog(
+                onDismissRequest = { showStudyCards = false },
+                title = { Text("Повторение") },
+                text = { Text("Пока нет сохранённых выделений для повторения.") },
+                confirmButton = { TextButton(onClick = { showStudyCards = false }) { Text("Закрыть") } }
+            )
+        }
     }
 
     if (showSearch) {
