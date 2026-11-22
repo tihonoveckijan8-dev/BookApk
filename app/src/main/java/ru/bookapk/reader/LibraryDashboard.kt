@@ -252,7 +252,7 @@ fun LibraryDashboard(
                     categories.forEach { category ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(category.name, Modifier.weight(1f), color = LibraryInk)
-                            IconButton(onClick = { onCategoryDelete(category) }) {
+                            IconButton(onClick = { if (selectedCategory == category.id) selectedCategory = null; onCategoryDelete(category) }) {
                                 Icon(Icons.Rounded.DeleteOutline, contentDescription = "Удалить категорию", tint = MaterialTheme.colorScheme.error)
                             }
                         }
