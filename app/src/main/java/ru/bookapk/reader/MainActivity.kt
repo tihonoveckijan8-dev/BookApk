@@ -109,9 +109,10 @@ private fun BookApkApp() {
     }
 
     fun updateAppearance(updated: ReaderAppearance) {
+        val iconChanged = updated.iconStyle != appearance.iconStyle
         appearance = updated
         scope.launch(Dispatchers.IO) { store.saveAppearance(updated) }
-        if (updated.iconStyle != appearance.iconStyle) applyLauncherIcon(context, updated.iconStyle)
+        if (iconChanged) applyLauncherIcon(context, updated.iconStyle)
     }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
@@ -192,6 +193,7 @@ private fun BookApkApp() {
                         persistBooks(updated)
                         activeBook = updated.firstOrNull { it.id == activeBook!!.id }
                     },
+                    visualStyle = appearance.visualStyle,
                     onBookmark = { position ->
                         val updated = books.map {
                             if (it.id == activeBook!!.id) it.copy(bookmarkPosition = position) else it
@@ -309,6 +311,7 @@ private fun ReaderScreen(
     onBack: () -> Unit,
     onPosition: (Int, Int) -> Unit,
     onBookmark: (Int) -> Unit,
+    visualStyle: String,
     onError: (String) -> Unit
 ) {
     val context = LocalContext.current
@@ -321,7 +324,8 @@ private fun ReaderScreen(
     var jump by remember { mutableStateOf("") }
     var scale by remember(book.id) { mutableFloatStateOf(1f) }
     var dragTotal by remember { mutableFloatStateOf(0f) }
-    val listState = rememberLazyListState(initialFirstVisibleItemIndex = if (book.bookmarkPosition >= 0) book.bookmarkPosition else book.readingPosition)
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = book.readingPosition.coerceAtLeast(0))
+    val readerScope = rememberCoroutineScope()
 
     LaunchedEffect(book.id) {
         loading = true
@@ -333,8 +337,7 @@ private fun ReaderScreen(
                     val fd = android.os.ParcelFileDescriptor.open(File(book.path), android.os.ParcelFileDescriptor.MODE_READ_ONLY)
                     try { PdfRenderer(fd).use { it.pageCount } } finally { fd.close() }
                 }
-                page = (if (book.bookmarkPosition >= 0) book.bookmarkPosition else book.readingPosition)
-                    .coerceIn(0, (pageCount - 1).coerceAtLeast(0))
+                page = book.readingPosition.coerceIn(0, (pageCount - 1).coerceAtLeast(0))
             }
         } catch (e: Exception) { onError(e.message ?: "Файл повреждён или недоступен."); onBack() }
         finally { loading = false }
@@ -357,6 +360,12 @@ private fun ReaderScreen(
                 Text(book.title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(if (book.type == "pdf") "Страница ${page + 1} из $pageCount" else "Текстовая книга", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .58f))
             }
+            if (hasBookmark) {
+                TextButton(onClick = {
+                    if (book.type == "pdf") page = book.bookmarkPosition
+                    else readerScope.launch { listState.animateScrollToItem(book.bookmarkPosition.coerceAtLeast(0)) }
+                }) { Text("К закладке", fontSize = 11.sp) }
+            }
             IconButton(onClick = { onBookmark(savedPosition) }) {
                 Icon(if (hasBookmark && book.bookmarkPosition == savedPosition) Icons.Rounded.BookmarkAdded else Icons.Rounded.BookmarkBorder, contentDescription = "Сохранить закладку", tint = MaterialTheme.colorScheme.primary)
             }
@@ -371,7 +380,6 @@ private fun ReaderScreen(
                 TextButton(onClick = { fontSize = (fontSize + 1).coerceAtMost(30f) }) { Text("A+") }
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = { sepia = !sepia }) { Text(if (sepia) "Светлая" else "Сепия") }
-                if (hasBookmark) TextButton(onClick = { scopeScrollTo(listState, book.bookmarkPosition) }) { Text("К закладке") }
             }
             LazyColumn(
                 state = listState,
@@ -392,7 +400,7 @@ private fun ReaderScreen(
             Box(
                 Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(if (appearanceSurfaceIsClay()) Color(0xFFECE9E1) else Color.White)
+                    .background(when (visualStyle) { "clay" -> Color(0xFFECE9E1); "glass" -> Color(0xDDFBFFFF); else -> Color.White })
                     .pointerInput(page, pageCount) {
                         detectHorizontalDragGestures(
                             onHorizontalDrag = { _, amount -> dragTotal += amount },
@@ -447,15 +455,6 @@ private fun ReaderScreen(
         }
     }
 }
-
-private fun scopeScrollTo(state: androidx.compose.foundation.lazy.LazyListState, position: Int) {
-    kotlinx.coroutines.GlobalScope.launch(Dispatchers.Main) {
-        state.animateScrollToItem(position.coerceAtLeast(0))
-    }
-}
-
-@Composable
-private fun appearanceSurfaceIsClay(): Boolean = MaterialTheme.colorScheme.background == Color(0xFFE8E5DE)
 
 @Composable
 private fun PdfPage(path: String, index: Int, modifier: Modifier = Modifier) {
