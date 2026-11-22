@@ -16,7 +16,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
-data class StagedBackupBook(val book: Book, val sourceFile: File, val sourceCoverFile: File? = null)
+data class StagedBackupBook(val book: Book, val sourceFile: File, val sourceCoverFile: File? = null, val sourceImages: Map<String, File> = emptyMap())
 
 data class StagedLibraryBackup(
     val books: List<StagedBackupBook>,
@@ -31,6 +31,7 @@ object LibraryBackup {
     private const val MAX_MANIFEST_BYTES = 10L * 1024L * 1024L
     private const val MAX_BOOK_BYTES = 512L * 1024L * 1024L
     private const val MAX_COVER_BYTES = 12L * 1024L * 1024L
+    private const val MAX_IMAGE_BYTES = 12L * 1024L * 1024L
     private const val MAX_TOTAL_BYTES = 1024L * 1024L * 1024L
 
     fun export(
@@ -57,11 +58,24 @@ object LibraryBackup {
                     it.extension.lowercase() in setOf("jpg", "jpeg", "png", "webp", "gif")
             }
             val coverArchiveName = cover?.let { "covers/cover-" + index + "." + it.extension.lowercase() }
+            val imageFiles = JSONArray()
+            val imageDirectory = book.imageDirectoryPath.takeIf { it.isNotBlank() }?.let(::File)
+            val images = imageDirectory?.listFiles()?.filter { image ->
+                image.isFile && image.length() in 1..MAX_IMAGE_BYTES &&
+                    image.extension.lowercase() in setOf("jpg", "jpeg", "png", "webp", "gif") &&
+                    image.name.matches(Regex("[A-Za-z0-9._-]+"))
+            }?.take(200).orEmpty()
+            images.forEach { image ->
+                val imageArchiveName = "images/book-" + index + "-" + image.name
+                imageFiles.put(JSONObject().put("archive", imageArchiveName).put("name", image.name))
+                files.add(imageArchiveName to image)
+            }
             records.put(
                 JSONObject()
-                    .put("book", book.copy(path = "", coverPath = "").toJson())
+                    .put("book", book.copy(path = "", coverPath = "", imageDirectoryPath = "").toJson())
                     .put("file", archiveName)
                     .put("coverFile", coverArchiveName.orEmpty())
+                    .put("imageFiles", imageFiles)
             )
             files.add(archiveName to source)
             if (cover != null && coverArchiveName != null) files.add(coverArchiveName to cover)
@@ -113,7 +127,7 @@ object LibraryBackup {
                 while (true) {
                     val entry = zip.nextEntry ?: break
                     if (entry.isDirectory) {
-                        require(entry.name in setOf("books/", "covers/")) { "В архиве обнаружена недопустимая папка." }
+                        require(entry.name in setOf("books/", "covers/", "images/")) { "В архиве обнаружена недопустимая папка." }
                         zip.closeEntry()
                         continue
                     }
@@ -125,12 +139,17 @@ object LibraryBackup {
                             totalBytes += copyEntry(zip, buffer, MAX_MANIFEST_BYTES, totalBytes)
                             manifestBytes = buffer.toByteArray()
                         }
-                        Regex("""(books/book-[0-9]+\.(pdf|txt)|covers/cover-[0-9]+\.(jpg|jpeg|png|webp|gif))""").matches(entry.name) -> {
+                        Regex("""(books/book-[0-9]+\.(pdf|txt)|covers/cover-[0-9]+\.(jpg|jpeg|png|webp|gif)|images/book-[0-9]+-[A-Za-z0-9._-]+\.(jpg|jpeg|png|webp|gif))""").matches(entry.name) -> {
                             require(!extracted.containsKey(entry.name)) { "В архиве повторяется файл книги или обложки." }
                             val isCover = entry.name.startsWith("covers/")
+                            val isImage = entry.name.startsWith("images/")
                             val fileName = entry.name.substringAfter('/')
                             val target = File(staging, fileName)
-                            val entryLimit = if (isCover) MAX_COVER_BYTES else MAX_BOOK_BYTES
+                            val entryLimit = when {
+                                isCover -> MAX_COVER_BYTES
+                                isImage -> MAX_IMAGE_BYTES
+                                else -> MAX_BOOK_BYTES
+                            }
                             val written = target.outputStream().buffered().use { output ->
                                 copyEntry(zip, output, entryLimit, totalBytes)
                             }
@@ -193,7 +212,27 @@ object LibraryBackup {
                 if (coverFile != null) require(coverFile.isFile && coverFile.length() in 1..MAX_COVER_BYTES) {
                     "Файл обложки пуст или превышает допустимый размер."
                 }
-                StagedBackupBook(book, extractedFile, coverFile)
+                val imageArray = record.optJSONArray("imageFiles") ?: JSONArray()
+                require(imageArray.length() <= 200) { "У книги слишком много иллюстраций в резервной копии." }
+                val images = linkedMapOf<String, File>()
+                (0 until imageArray.length()).forEach { imageIndex ->
+                    val imageRecord = imageArray.getJSONObject(imageIndex)
+                    val imageArchive = imageRecord.getString("archive")
+                    val imageName = imageRecord.getString("name")
+                    require(imageName.matches(Regex("[A-Za-z0-9._-]+\\.(jpg|jpeg|png|webp|gif)"))) {
+                        "Недопустимое имя иллюстрации."
+                    }
+                    require(imageArchive.matches(Regex("""images/book-[0-9]+-[A-Za-z0-9._-]+\\.(jpg|jpeg|png|webp|gif)"""))) {
+                        "Недопустимый путь к иллюстрации."
+                    }
+                    val imageFile = extracted[imageArchive]
+                        ?: throw IllegalArgumentException("В резервной копии отсутствует иллюстрация.")
+                    require(imageFile.isFile && imageFile.length() in 1..MAX_IMAGE_BYTES) {
+                        "Иллюстрация пуста или превышает допустимый размер."
+                    }
+                    require(images.put(imageName, imageFile) == null) { "В резервной копии повторяется имя иллюстрации." }
+                }
+                StagedBackupBook(book, extractedFile, coverFile, images)
             }
             require(books.map { it.book.id }.distinct().size == books.size) { "В резервной копии есть повторяющиеся книги." }
             val categoryIds = categories.map { it.id }.toSet()
@@ -224,7 +263,20 @@ object LibraryBackup {
                     copiedFiles.add(coverTarget)
                     coverTarget.absolutePath
                 }.orEmpty()
-                staged.book.copy(path = target.absolutePath, coverPath = coverPath)
+                val imageDirectoryPath = if (staged.sourceImages.isEmpty()) "" else {
+                    val imageDirectory = File(context.filesDir, "ebook-images/" + UUID.randomUUID()).apply { mkdirs() }
+                    staged.sourceImages.forEach { (name, sourceImage) ->
+                        val imageTarget = File(imageDirectory, name)
+                        sourceImage.copyTo(imageTarget, overwrite = false)
+                        copiedFiles.add(imageTarget)
+                    }
+                    imageDirectory.absolutePath
+                }
+                staged.book.copy(
+                    path = target.absolutePath,
+                    coverPath = coverPath,
+                    imageDirectoryPath = imageDirectoryPath
+                )
             }
         } catch (error: Exception) {
             copiedFiles.forEach { it.delete() }
