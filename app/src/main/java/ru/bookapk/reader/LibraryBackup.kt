@@ -41,10 +41,14 @@ object LibraryBackup {
     ) {
         val records = JSONArray()
         val files = books.mapIndexed { index, book ->
-            val extension = book.type.lowercase()
-            require(extension == "pdf" || extension == "txt") { "Неподдерживаемый формат книги: " + book.title }
+            val extension = when (book.type.lowercase()) {
+                "epub", "fb2" -> "txt" // WHY: imported reflowable books are stored as normalized UTF-8 text.
+                "pdf", "txt" -> book.type.lowercase()
+                else -> throw IllegalArgumentException("Неподдерживаемый формат книги: " + book.title)
+            }
             val source = File(book.path)
             require(source.isFile && source.length() > 0L) { "Не найден файл книги: " + book.title }
+            require(source.extension.equals(extension, true)) { "Файл книги имеет неожиданный формат: " + book.title }
             val archiveName = "books/book-" + index + "." + extension
             records.put(
                 JSONObject()
@@ -165,8 +169,9 @@ object LibraryBackup {
                     ?: throw IllegalArgumentException("В архиве отсутствует файл: " + archiveName)
                 require(extractedFile.isFile && extractedFile.length() > 0L) { "Файл книги пуст или повреждён." }
                 val book = Book.fromJson(record.getJSONObject("book"))
-                require(book.type in setOf("pdf", "txt")) { "Формат книги не поддерживается." }
-                require(archiveName.endsWith("." + book.type)) { "Формат файла не совпадает с данными книги." }
+                val storedExtension = if (book.type in setOf("epub", "fb2")) "txt" else book.type
+                require(book.type in setOf("pdf", "txt", "epub", "fb2")) { "Формат книги не поддерживается." }
+                require(archiveName.endsWith("." + storedExtension)) { "Формат файла не совпадает с данными книги." }
                 StagedBackupBook(book, extractedFile)
             }
             require(books.map { it.book.id }.distinct().size == books.size) { "В резервной копии есть повторяющиеся книги." }
@@ -187,7 +192,7 @@ object LibraryBackup {
         val copiedFiles = mutableListOf<File>()
         try {
             return backup.books.map { staged ->
-                val extension = staged.book.type
+                val extension = staged.sourceFile.extension
                 val target = File(destination, UUID.randomUUID().toString() + "." + extension)
                 staged.sourceFile.copyTo(target, overwrite = false)
                 copiedFiles.add(target)
