@@ -16,7 +16,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
-data class StagedBackupBook(val book: Book, val sourceFile: File)
+data class StagedBackupBook(val book: Book, val sourceFile: File, val sourceCoverFile: File? = null)
 
 data class StagedLibraryBackup(
     val books: List<StagedBackupBook>,
@@ -30,6 +30,7 @@ object LibraryBackup {
     private const val VERSION = 1
     private const val MAX_MANIFEST_BYTES = 10L * 1024L * 1024L
     private const val MAX_BOOK_BYTES = 512L * 1024L * 1024L
+    private const val MAX_COVER_BYTES = 12L * 1024L * 1024L
     private const val MAX_TOTAL_BYTES = 1024L * 1024L * 1024L
 
     fun export(
@@ -40,7 +41,8 @@ object LibraryBackup {
         appearance: ReaderAppearance
     ) {
         val records = JSONArray()
-        val files = books.mapIndexed { index, book ->
+        val files = mutableListOf<Pair<String, File>>()
+        books.forEachIndexed { index, book ->
             val extension = when (book.type.lowercase()) {
                 "epub", "fb2" -> "txt" // WHY: imported reflowable books are stored as normalized UTF-8 text.
                 "pdf", "txt" -> book.type.lowercase()
@@ -50,12 +52,19 @@ object LibraryBackup {
             require(source.isFile && source.length() > 0L) { "Не найден файл книги: " + book.title }
             require(source.extension.equals(extension, true)) { "Файл книги имеет неожиданный формат: " + book.title }
             val archiveName = "books/book-" + index + "." + extension
+            val cover = book.coverPath.takeIf { it.isNotBlank() }?.let(::File)?.takeIf {
+                it.isFile && it.length() in 1..MAX_COVER_BYTES &&
+                    it.extension.lowercase() in setOf("jpg", "jpeg", "png", "webp", "gif")
+            }
+            val coverArchiveName = cover?.let { "covers/cover-" + index + "." + it.extension.lowercase() }
             records.put(
                 JSONObject()
-                    .put("book", book.copy(path = "").toJson())
+                    .put("book", book.copy(path = "", coverPath = "").toJson())
                     .put("file", archiveName)
+                    .put("coverFile", coverArchiveName.orEmpty())
             )
-            archiveName to source
+            files.add(archiveName to source)
+            if (cover != null && coverArchiveName != null) files.add(coverArchiveName to cover)
         }
 
         val categoryArray = JSONArray()
@@ -104,7 +113,7 @@ object LibraryBackup {
                 while (true) {
                     val entry = zip.nextEntry ?: break
                     if (entry.isDirectory) {
-                        require(entry.name == "books/") { "В архиве обнаружена недопустимая папка." }
+                        require(entry.name in setOf("books/", "covers/")) { "В архиве обнаружена недопустимая папка." }
                         zip.closeEntry()
                         continue
                     }
@@ -116,12 +125,14 @@ object LibraryBackup {
                             totalBytes += copyEntry(zip, buffer, MAX_MANIFEST_BYTES, totalBytes)
                             manifestBytes = buffer.toByteArray()
                         }
-                        Regex("""books/book-[0-9]+\.(pdf|txt)""").matches(entry.name) -> {
-                            require(!extracted.containsKey(entry.name)) { "В архиве повторяется файл книги." }
+                        Regex("""(books/book-[0-9]+\.(pdf|txt)|covers/cover-[0-9]+\.(jpg|jpeg|png|webp|gif))""").matches(entry.name) -> {
+                            require(!extracted.containsKey(entry.name)) { "В архиве повторяется файл книги или обложки." }
+                            val isCover = entry.name.startsWith("covers/")
                             val fileName = entry.name.substringAfter('/')
                             val target = File(staging, fileName)
+                            val entryLimit = if (isCover) MAX_COVER_BYTES else MAX_BOOK_BYTES
                             val written = target.outputStream().buffered().use { output ->
-                                copyEntry(zip, output, MAX_BOOK_BYTES, totalBytes)
+                                copyEntry(zip, output, entryLimit, totalBytes)
                             }
                             totalBytes += written
                             extracted[entry.name] = target
@@ -172,7 +183,17 @@ object LibraryBackup {
                 val storedExtension = if (book.type in setOf("epub", "fb2")) "txt" else book.type
                 require(book.type in setOf("pdf", "txt", "epub", "fb2")) { "Формат книги не поддерживается." }
                 require(archiveName.endsWith("." + storedExtension)) { "Формат файла не совпадает с данными книги." }
-                StagedBackupBook(book, extractedFile)
+                val coverName = record.optString("coverFile", "")
+                val coverFile = if (coverName.isBlank()) null else {
+                    require(Regex("""covers/cover-[0-9]+\.(jpg|jpeg|png|webp|gif)""").matches(coverName)) {
+                        "Недопустимый путь к обложке."
+                    }
+                    extracted[coverName] ?: throw IllegalArgumentException("В архиве отсутствует обложка книги.")
+                }
+                if (coverFile != null) require(coverFile.isFile && coverFile.length() in 1..MAX_COVER_BYTES) {
+                    "Файл обложки пуст или превышает допустимый размер."
+                }
+                StagedBackupBook(book, extractedFile, coverFile)
             }
             require(books.map { it.book.id }.distinct().size == books.size) { "В резервной копии есть повторяющиеся книги." }
             val categoryIds = categories.map { it.id }.toSet()
@@ -196,7 +217,14 @@ object LibraryBackup {
                 val target = File(destination, UUID.randomUUID().toString() + "." + extension)
                 staged.sourceFile.copyTo(target, overwrite = false)
                 copiedFiles.add(target)
-                staged.book.copy(path = target.absolutePath)
+                val coverPath = staged.sourceCoverFile?.let { sourceCover ->
+                    val coverDirectory = File(context.filesDir, "covers").apply { mkdirs() }
+                    val coverTarget = File(coverDirectory, UUID.randomUUID().toString() + "." + sourceCover.extension)
+                    sourceCover.copyTo(coverTarget, overwrite = false)
+                    copiedFiles.add(coverTarget)
+                    coverTarget.absolutePath
+                }.orEmpty()
+                staged.book.copy(path = target.absolutePath, coverPath = coverPath)
             }
         } catch (error: Exception) {
             copiedFiles.forEach { it.delete() }
