@@ -14,20 +14,26 @@ data class ReaderBookmark(
     val id: String,
     val position: Int,
     val title: String,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val offsetPx: Int = 0,
+    val note: String = ""
 ) {
     fun toJson() = JSONObject()
         .put("id", id)
         .put("position", position)
         .put("title", title)
         .put("createdAt", createdAt)
+        .put("offsetPx", offsetPx)
+        .put("note", note)
 
     companion object {
         fun fromJson(json: JSONObject) = ReaderBookmark(
             id = json.optString("id", java.util.UUID.randomUUID().toString()),
             position = json.optInt("position", 0).coerceAtLeast(0),
             title = json.optString("title", "Закладка"),
-            createdAt = json.optLong("createdAt", 0L)
+            createdAt = json.optLong("createdAt", 0L),
+            offsetPx = json.optInt("offsetPx", 0).coerceAtLeast(0),
+            note = json.optString("note", "")
         )
     }
 }
