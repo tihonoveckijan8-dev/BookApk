@@ -85,15 +85,20 @@ object EbookImporter {
                         if (result.isNotEmpty()) result.appendLine().appendLine()
                         val tocTitle = tocTitles[entryPath]
                         val first = chapterText.first()
-                        val hasExplicitHeading = first.matches(
+                        // WHY: an explicit XHTML heading is stronger evidence than guessing from its wording.
+                        val markupHeading = body.select("h1,h2,h3,h4,h5,h6").first()?.text()?.trim().orEmpty()
+                        val headingIsFirstBlock = markupHeading.isNotBlank() && first.equals(markupHeading, true)
+                        val hasExplicitHeading = headingIsFirstBlock || first.matches(
                             Regex("(?i)^(глава|часть|chapter|part|book|пролог|эпилог).*")
                         )
+                        val contentBlocks = if (!tocTitle.isNullOrBlank() && headingIsFirstBlock &&
+                            !markupHeading.equals(tocTitle, true)) chapterText.drop(1) else chapterText
                         if (!tocTitle.isNullOrBlank() && !first.equals(tocTitle, true)) {
                             result.appendLine(tocTitle).appendLine()
                         } else if (!hasExplicitHeading && tocTitle.isNullOrBlank()) {
                             result.appendLine("Глава ${index + 1}").appendLine()
                         }
-                        chapterText.forEach { result.appendLine(it).appendLine() }
+                        contentBlocks.forEach { result.appendLine(it).appendLine() }
                     }
                 }
                 return result.toString().trim()
