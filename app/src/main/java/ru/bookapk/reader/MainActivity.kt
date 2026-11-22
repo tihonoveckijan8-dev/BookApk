@@ -60,6 +60,12 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -74,6 +80,55 @@ import java.util.Date
 import java.util.Locale
 import java.util.UUID
 import kotlin.math.roundToInt
+
+
+/**
+ * Renders lightweight inline emphasis retained by the EPUB importer.
+ * WHY: imported books keep their typography cues while continuing to use the native paragraph reader.
+ */
+private fun formatReaderParagraph(value: String): AnnotatedString = buildAnnotatedString {
+    var bold = false
+    var italic = false
+    var underline = false
+    val buffer = StringBuilder()
+
+    fun flush() {
+        if (buffer.isEmpty()) return
+        withStyle(
+            SpanStyle(
+                fontWeight = if (bold) FontWeight.Bold else null,
+                fontStyle = if (italic) FontStyle.Italic else null,
+                textDecoration = if (underline) TextDecoration.Underline else null
+            )
+        ) {
+            append(buffer.toString())
+        }
+        buffer.clear()
+    }
+
+    var index = 0
+    while (index < value.length) {
+        val marker = when {
+            value.startsWith("**", index) -> "**"
+            value.startsWith("__", index) -> "__"
+            value[index] == '*' -> "*"
+            else -> null
+        }
+        if (marker != null && value.indexOf(marker, index + marker.length) >= 0) {
+            flush()
+            when (marker) {
+                "**" -> bold = !bold
+                "__" -> underline = !underline
+                "*" -> italic = !italic
+            }
+            index += marker.length
+        } else {
+            buffer.append(value[index])
+            index++
+        }
+    }
+    flush()
+}
 
 private val Teal = Color(0xFF087F78)
 private val Warm = Color(0xFFF6F3EC)
@@ -921,7 +976,7 @@ private fun ReaderScreen(
                         else -> Color(0x66F2CF55)
                     }
                     Text(
-                        paragraphs[index],
+                        formatReaderParagraph(paragraphs[index]),
                         fontSize = if (chapter != null) (fontSize + 4).sp else fontSize.sp,
                         lineHeight = (fontSize * lineSpacing).sp,
                         fontWeight = if (chapter != null) FontWeight.Bold else FontWeight.Normal,
