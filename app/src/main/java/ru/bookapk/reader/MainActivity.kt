@@ -158,20 +158,21 @@ private fun BookApkApp() {
                         }
                         val (destination, metadata) = if (ext == "epub" || ext == "fb2") {
                             val importedBook = EbookImporter.convert(context, uri, ext)
-                            importedBook.file to (importedBook.title to importedBook.author)
+                            importedBook.file to Triple(importedBook.title, importedBook.author, importedBook.cover)
                         } else {
                             val target = File(context.filesDir, "books").apply { mkdirs() }
                             val file = File(target, "${UUID.randomUUID()}.$ext")
                             context.contentResolver.openInputStream(uri)?.use { input ->
                                 file.outputStream().use { output -> input.copyTo(output) }
                             } ?: throw IllegalStateException("Не удалось прочитать выбранный файл.")
-                            file to (null to null)
+                            file to Triple(null, null, null)
                         }
                         val libraryTitle = metadata.first?.takeIf { it.isNotBlank() }
                             ?: name.substringBeforeLast('.', name)
                         Book(
                             UUID.randomUUID().toString(), libraryTitle, destination.absolutePath, ext,
-                            author = metadata.second.orEmpty()
+                            author = metadata.second.orEmpty(),
+                            coverPath = metadata.third?.absolutePath.orEmpty()
                         )
                     }
                     persistBooks(books + imported)
@@ -292,7 +293,10 @@ private fun BookApkApp() {
                     },
                     onBookDelete = { book ->
                         persistBooks(books.filterNot { it.id == book.id })
-                        scope.launch(Dispatchers.IO) { runCatching { File(book.path).delete() } }
+                        scope.launch(Dispatchers.IO) {
+                            runCatching { File(book.path).delete() }
+                            if (book.coverPath.isNotBlank()) runCatching { File(book.coverPath).delete() }
+                        }
                     },
                     onBookFavoriteChange = { book ->
                         // WHY: persist the flag with the full book record so favorites survive relaunches.
