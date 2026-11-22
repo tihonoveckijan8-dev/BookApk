@@ -259,7 +259,7 @@ private fun BookApkApp() {
                     },
                     onAddAnnotation = { annotation ->
                         val updated = books.map { current ->
-                            if (current.id == activeBook!!.id) current.copy(annotations = current.annotations + annotation) else current
+                            if (current.id == activeBook!!.id) current.copy(annotations = current.annotations.filterNot { it.position == annotation.position } + annotation) else current
                         }
                         persistBooks(updated)
                         activeBook = updated.firstOrNull { it.id == activeBook!!.id }
