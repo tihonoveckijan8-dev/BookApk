@@ -12,6 +12,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -36,6 +42,8 @@ import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -146,11 +154,22 @@ private fun BookApkApp() {
         }
     }
 
-    val palette = when (appearance.visualStyle) {
+    val targetPalette = when (appearance.visualStyle) {
         "clay" -> lightColorScheme(primary = Color(0xFF426D68), onPrimary = Color.White, background = Color(0xFFE8E5DE), surface = Color(0xFFF0EEE8), onSurface = Color(0xFF303936))
         "glass" -> lightColorScheme(primary = Color(0xFF376F78), onPrimary = Color.White, background = Color(0xFFEAF1F2), surface = Color(0xDDFBFFFF), onSurface = Color(0xFF24383D))
         else -> lightColorScheme(primary = Teal, onPrimary = Color.White, background = Warm, surface = Color.White, onSurface = Ink)
     }
+    // WHY: interpolate the shared palette so changing a theme never flashes the whole screen.
+    val animatedPrimary by animateColorAsState(targetPalette.primary, tween(420), label = "theme-primary")
+    val animatedBackground by animateColorAsState(targetPalette.background, tween(460), label = "theme-background")
+    val animatedSurface by animateColorAsState(targetPalette.surface, tween(420), label = "theme-surface")
+    val animatedOnSurface by animateColorAsState(targetPalette.onSurface, tween(420), label = "theme-text")
+    val palette = targetPalette.copy(
+        primary = animatedPrimary,
+        background = animatedBackground,
+        surface = animatedSurface,
+        onSurface = animatedOnSurface
+    )
 
     MaterialTheme(colorScheme = palette) {
         Surface(Modifier.fillMaxSize(), color = palette.background) {
@@ -219,77 +238,179 @@ private fun AppearanceScreen(
     onBack: () -> Unit,
     onChange: (ReaderAppearance) -> Unit
 ) {
-    val glass = appearance.visualStyle == "glass"
-    val clay = appearance.visualStyle == "clay"
-    val panel = when (appearance.visualStyle) {
-        "clay" -> Color(0xFFECE9E1)
-        "glass" -> Color(0xBFFFFFFF)
-        else -> MaterialTheme.colorScheme.surface
-    }
+    val panel = MaterialTheme.colorScheme.surface
+    val styles = listOf(
+        Triple("classic", "Обычный", "Чистые поверхности и спокойная типографика"),
+        Triple("clay", "Клэйморфизм", "Мягкий рельеф и тактильные поверхности"),
+        Triple("glass", "Глэсморфизм", "Полупрозрачные панели и лёгкие слои")
+    )
+    val icons = listOf(
+        Triple("classic", "Книжная", "Лаконичная открытая книга"),
+        Triple("clay", "Объёмная", "Мягкий рельеф"),
+        Triple("glass", "Стеклянная", "Лёгкий полупрозрачный знак")
+    )
     Column(
         Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 22.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 12.dp, bottom = 28.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 12.dp, bottom = 24.dp)) {
             IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, contentDescription = "Назад") }
-            Text("Оформление", fontSize = 23.sp, fontWeight = FontWeight.Bold)
+            Column {
+                Text("Оформление", fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                Text("Настройте внешний вид читалки", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .58f))
+            }
         }
+
+        Text("ПРЕДПРОСМОТР", fontSize = 10.sp, letterSpacing = 1.5.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(10.dp))
+        ThemeLivePreview(visualStyle = appearance.visualStyle)
+        Spacer(Modifier.height(25.dp))
+
         Text("ВИЗУАЛЬНЫЙ СТИЛЬ", fontSize = 10.sp, letterSpacing = 1.5.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(12.dp))
-        listOf(
-            Triple("classic", "Обычный", "Чистые поверхности и спокойная типографика"),
-            Triple("clay", "Клэйморфизм", "Мягкий рельеф и тактильные поверхности"),
-            Triple("glass", "Глэсморфизм", "Полупрозрачные панели и лёгкие слои")
-        ).forEach { (id, title, description) ->
+        Text("Выберите оформление всего приложения", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .58f), modifier = Modifier.padding(top = 4.dp, bottom = 12.dp))
+        styles.forEach { (id, title, description) ->
+            val selected = appearance.visualStyle == id
+            val container by animateColorAsState(
+                targetValue = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = if (id == "glass") .13f else .09f) else panel,
+                animationSpec = tween(300), label = "style-card-$id"
+            )
+            val elevation by animateDpAsState(if (selected && id == "clay") 8.dp else if (selected) 3.dp else 0.dp, tween(300), label = "style-elevation-$id")
+            val radius by animateDpAsState(if (selected) 23.dp else 17.dp, tween(300), label = "style-radius-$id")
             Card(
                 onClick = { onChange(appearance.copy(visualStyle = id)) },
                 modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
-                    .then(if (glass) Modifier.border(1.dp, Color.White.copy(alpha = .8f), RoundedCornerShape(20.dp)) else Modifier),
-                shape = RoundedCornerShape(if (clay) 24.dp else 18.dp),
-                colors = CardDefaults.cardColors(containerColor = panel),
-                elevation = CardDefaults.cardElevation(defaultElevation = if (clay) 7.dp else 1.dp)
+                    .then(if (selected && id == "glass") Modifier.border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .35f), RoundedCornerShape(radius)) else Modifier),
+                shape = RoundedCornerShape(radius),
+                colors = CardDefaults.cardColors(containerColor = container),
+                elevation = CardDefaults.cardElevation(defaultElevation = elevation),
+                border = if (selected && id != "glass") androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .28f)) else null
             ) {
-                Row(Modifier.padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(48.dp).clip(RoundedCornerShape(15.dp)).background(
-                        when (id) { "clay" -> Color(0xFFD5D1C8); "glass" -> Color(0xFFA9C8CD).copy(alpha = .55f); else -> Color(0xFFDDEFE9) }
-                    ), contentAlignment = Alignment.Center) {
-                        Text("Aa", fontWeight = FontWeight.Bold, color = when (id) { "clay" -> Color(0xFF52615D); "glass" -> Color(0xFF315E66); else -> Teal })
-                    }
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    ThemeSwatch(style = id, selected = selected)
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
                         Text(title, fontWeight = FontWeight.SemiBold)
                         Text(description, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f))
                     }
-                    RadioButton(selected = appearance.visualStyle == id, onClick = { onChange(appearance.copy(visualStyle = id)) })
+                    AnimatedContent(targetState = selected, transitionSpec = {
+                        fadeIn(tween(180)) togetherWith fadeOut(tween(120))
+                    }, label = "selected-label") { isSelected ->
+                        if (isSelected) Text("Выбрано", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        else RadioButton(selected = false, onClick = { onChange(appearance.copy(visualStyle = id)) })
+                    }
                 }
             }
         }
-        Spacer(Modifier.height(25.dp))
+
+        Spacer(Modifier.height(18.dp))
         Text("СТИЛЬ ИКОНКИ ПРИЛОЖЕНИЯ", fontSize = 10.sp, letterSpacing = 1.5.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(12.dp))
-        listOf(
-            Triple("classic", "Книжная", "Лаконичная открытая книга"),
-            Triple("clay", "Объёмная", "Мягкий рельеф"),
-            Triple("glass", "Стеклянная", "Лёгкий полупрозрачный знак")
-        ).forEach { (id, title, description) ->
+        Text("Меняется значок приложения на главном экране", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .58f), modifier = Modifier.padding(top = 4.dp, bottom = 12.dp))
+        icons.forEach { (id, title, description) ->
+            val selected = appearance.iconStyle == id
+            val container by animateColorAsState(
+                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = .09f) else panel,
+                tween(260), label = "icon-card-$id"
+            )
             Card(
                 onClick = { onChange(appearance.copy(iconStyle = id)) },
-                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 9.dp),
                 shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = panel)
+                colors = CardDefaults.cardColors(containerColor = container),
+                border = if (selected) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .28f)) else null
             ) {
-                Row(Modifier.padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     LauncherIconPreview(style = id)
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
                         Text(title, fontWeight = FontWeight.SemiBold)
                         Text(description, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f))
                     }
-                    RadioButton(selected = appearance.iconStyle == id, onClick = { onChange(appearance.copy(iconStyle = id)) })
+                    RadioButton(selected = selected, onClick = { onChange(appearance.copy(iconStyle = id)) })
                 }
             }
         }
         Spacer(Modifier.height(28.dp))
+    }
+}
+
+@Composable
+private fun ThemeLivePreview(visualStyle: String) {
+    val clay = visualStyle == "clay"
+    val glass = visualStyle == "glass"
+    val container by animateColorAsState(
+        when (visualStyle) {
+            "clay" -> Color(0xFFECE9E1)
+            "glass" -> Color(0xCFFFFFFF)
+            else -> Color.White
+        }, tween(420), label = "preview-surface"
+    )
+    val accent by animateColorAsState(
+        when (visualStyle) {
+            "clay" -> Color(0xFF426D68)
+            "glass" -> Color(0xFF376F78)
+            else -> Teal
+        }, tween(420), label = "preview-accent"
+    )
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(if (clay) 26.dp else 20.dp),
+        colors = CardDefaults.cardColors(containerColor = container),
+        elevation = CardDefaults.cardElevation(if (clay) 8.dp else 2.dp),
+        border = if (glass) androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = .9f)) else null
+    ) {
+        Column(Modifier.padding(17.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(38.dp).clip(RoundedCornerShape(12.dp)).background(accent.copy(alpha = .13f)), contentAlignment = Alignment.Center) {
+                    Text("М", color = accent, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Моя библиотека", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text("Ваша следующая глава", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .55f))
+                }
+                Text("•••", color = accent, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.height(15.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(43.dp, 56.dp).clip(RoundedCornerShape(8.dp)).background(accent.copy(alpha = .14f)), contentAlignment = Alignment.Center) {
+                    Text("PDF", color = accent, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Название книги", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Text("Продолжить чтение · 68%", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .58f))
+                    Spacer(Modifier.height(7.dp))
+                    LinearProgressIndicator(
+                        progress = { .68f },
+                        modifier = Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(8.dp)),
+                        color = accent,
+                        trackColor = accent.copy(alpha = .13f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThemeSwatch(style: String, selected: Boolean) {
+    val base = when (style) {
+        "clay" -> Color(0xFFD8D4CA)
+        "glass" -> Color(0xFFA9C8CD)
+        else -> Color(0xFFDDEFE9)
+    }
+    val accent = when (style) {
+        "clay" -> Color(0xFF52615D)
+        "glass" -> Color(0xFF315E66)
+        else -> Teal
+    }
+    Box(
+        Modifier.size(50.dp).clip(RoundedCornerShape(if (selected) 17.dp else 13.dp))
+            .background(base)
+            .then(if (style == "glass") Modifier.border(1.dp, Color.White, RoundedCornerShape(13.dp)) else Modifier),
+        contentAlignment = Alignment.Center
+    ) {
+        Text("Aa", fontWeight = FontWeight.Bold, color = accent, fontSize = 17.sp)
     }
 }
 
