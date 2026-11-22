@@ -126,6 +126,19 @@ private fun BookApkApp() {
         }
     }
 
+    fun updateActiveBook(transform: (Book) -> Book) {
+        val activeId = activeBook?.id ?: return
+        val updatedBooks = books.map { current ->
+            if (current.id == activeId) transform(current) else current
+        }
+        val updatedActive = updatedBooks.firstOrNull { it.id == activeId } ?: return
+        // WHY: ignore no-op scroll events so DataStore is not rewritten unnecessarily.
+        if (updatedActive == activeBook) return
+        books = updatedBooks
+        activeBook = updatedActive
+        scope.launch(Dispatchers.IO) { store.save(updatedBooks) }
+    }
+
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
             scope.launch {
@@ -345,11 +358,7 @@ private fun BookApkApp() {
                 ReaderScreen(
                     book = activeBook!!,
                     onBack = { activeBook = null },
-                    onProgress = { value ->
-                        val updated = books.map { if (it.id == activeBook!!.id) it.copy(progress = value) else it }
-                        books = updated
-                        scope.launch(Dispatchers.IO) { store.save(updated) }
-                    },
+                    onUpdateBook = { transform -> updateActiveBook(transform) },
                     onError = { error = it }
                 )
             }
@@ -501,18 +510,32 @@ private fun BookApkApp() {
 }
 
 @Composable
-private fun ReaderScreen(book: Book, onBack: () -> Unit, onProgress: (Int) -> Unit, onError: (String) -> Unit) {
+private fun ReaderScreen(
+    book: Book,
+    onBack: () -> Unit,
+    onUpdateBook: ((Book) -> Book) -> Unit,
+    onError: (String) -> Unit
+) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var showControls by remember { mutableStateOf(true) }
     var text by remember(book.id) { mutableStateOf<String?>(null) }
     var fontSize by remember { mutableFloatStateOf(18f) }
     var sepia by remember { mutableStateOf(false) }
     var pageCount by remember { mutableIntStateOf(0) }
-    var page by remember(book.id) { mutableIntStateOf(0) }
+    var page by remember(book.id) { mutableIntStateOf(book.readingPosition.coerceAtLeast(0)) }
+    var currentPosition by remember(book.id) { mutableIntStateOf(book.readingPosition.coerceAtLeast(0)) }
     var loading by remember { mutableStateOf(true) }
     var jump by remember { mutableStateOf("") }
-    val listState = androidx.compose.foundation.lazy.rememberLazyListState(initialFirstVisibleItemIndex = book.progress.coerceAtLeast(0))
-    val scrollState = rememberScrollState()
+    var showBookmarksDialog by remember { mutableStateOf(false) }
+    var showNotesDialog by remember { mutableStateOf(false) }
+    var showNoteEditor by remember { mutableStateOf(false) }
+    var noteDraft by remember { mutableStateOf("") }
+
+    val txtListState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val pdfListState = androidx.compose.foundation.lazy.rememberLazyListState()
+    var txtRestored by remember(book.id) { mutableStateOf(false) }
+    var pdfRestored by remember(book.id) { mutableStateOf(false) }
 
     LaunchedEffect(book.id) {
         loading = true
@@ -521,64 +544,358 @@ private fun ReaderScreen(book: Book, onBack: () -> Unit, onProgress: (Int) -> Un
                 text = withContext(Dispatchers.IO) { File(book.path).readText(Charsets.UTF_8) }
             } else {
                 pageCount = withContext(Dispatchers.IO) {
-                    val fd = android.os.ParcelFileDescriptor.open(File(book.path), android.os.ParcelFileDescriptor.MODE_READ_ONLY)
-                    PdfRenderer(fd).use { it.pageCount }.also { fd.close() }
+                    val fd = android.os.ParcelFileDescriptor.open(
+                        File(book.path),
+                        android.os.ParcelFileDescriptor.MODE_READ_ONLY
+                    )
+                    try {
+                        PdfRenderer(fd).use { it.pageCount }
+                    } finally {
+                        fd.close()
+                    }
                 }
-                page = book.progress.coerceAtMost((pageCount - 1).coerceAtLeast(0))
             }
-        } catch (e: Exception) { onError(e.message ?: "Файл повреждён или недоступен."); onBack() }
-        finally { loading = false }
+        } catch (e: Exception) {
+            onError(e.message ?: "Файл повреждён или недоступен.")
+            onBack()
+        } finally {
+            loading = false
+        }
     }
 
-    Column(Modifier.fillMaxSize().background(if (sepia) Color(0xFFF1E5CE) else Color(0xFFFAF9F6))) {
-        if (showControls) {
-            Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, contentDescription = "Назад") }
-                Text(book.title, Modifier.weight(1f), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (book.type == "pdf" && pageCount > 0) Text("${page + 1} из $pageCount", fontSize = 12.sp, color = Teal)
-            }
+    fun jumpTo(position: Int) {
+        scope.launch {
             if (book.type == "txt") {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                val total = txtListState.layoutInfo.totalItemsCount
+                if (total > 0) {
+                    txtListState.animateScrollToItem(position.coerceIn(0, total - 1))
+                }
+            } else if (pageCount > 0) {
+                val target = position.coerceIn(0, pageCount - 1)
+                page = target
+                pdfListState.animateScrollToItem(target)
+            }
+        }
+    }
+
+    val isBookmarkedHere = book.bookmarks.any { it.position == currentPosition }
+    val positionLabel = if (book.type == "pdf") {
+        "Страница " + (currentPosition + 1)
+    } else {
+        "Фрагмент " + (currentPosition + 1)
+    }
+
+    Column(
+        Modifier.fillMaxSize().background(if (sepia) Color(0xFFF1E5CE) else Color(0xFFFAF9F6))
+    ) {
+        if (showControls) {
+            Row(
+                Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.Rounded.ArrowBack, contentDescription = "Назад")
+                }
+                Text(
+                    book.title,
+                    Modifier.weight(1f),
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (book.type == "pdf" && pageCount > 0) {
+                    Text((page + 1).toString() + " из " + pageCount, fontSize = 12.sp, color = Teal)
+                }
+            }
+
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(
+                    enabled = !isBookmarkedHere,
+                    onClick = {
+                        val bookmark = ReaderBookmark(
+                            id = UUID.randomUUID().toString(),
+                            position = currentPosition,
+                            title = positionLabel
+                        )
+                        onUpdateBook { current ->
+                            if (current.bookmarks.any { it.position == bookmark.position }) current
+                            else current.copy(bookmarks = (current.bookmarks + bookmark).sortedBy { it.position })
+                        }
+                    }
+                ) {
+                    Text(if (isBookmarkedHere) "Закладка ✓" else "＋ Закладка")
+                }
+                TextButton(onClick = { showBookmarksDialog = true }) {
+                    Text("Закладки · " + book.bookmarks.size)
+                }
+                TextButton(onClick = {
+                    noteDraft = ""
+                    showNoteEditor = true
+                }) {
+                    Text("＋ Заметка")
+                }
+                TextButton(onClick = { showNotesDialog = true }) {
+                    Text("Заметки · " + book.notes.size)
+                }
+            }
+
+            if (book.type == "txt") {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     TextButton(onClick = { fontSize = (fontSize - 1).coerceAtLeast(14f) }) { Text("A−") }
-                    Text("${fontSize.toInt()} pt")
+                    Text(fontSize.toInt().toString() + " pt")
                     TextButton(onClick = { fontSize = (fontSize + 1).coerceAtMost(30f) }) { Text("A+") }
                     Spacer(Modifier.weight(1f))
-                    TextButton(onClick = { sepia = !sepia }) { Text(if (sepia) "Белый фон" else "Сепия") }
+                    TextButton(onClick = { sepia = !sepia }) {
+                        Text(if (sepia) "Белый фон" else "Сепия")
+                    }
                 }
             }
         }
+
         if (loading) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Teal) }
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = Teal)
+            }
         } else if (book.type == "txt") {
-            val paragraphs = remember(text) { (text ?: "").split(Regex("\\n\\s*\\n")).filter { it.isNotBlank() }.ifEmpty { listOf(text ?: "") } }
+            val paragraphs = remember(text) {
+                (text ?: "").split(Regex("\\n\\s*\\n")).filter { it.isNotBlank() }
+                    .ifEmpty { listOf(text ?: "") }
+            }
+
+            LaunchedEffect(book.id, paragraphs.size) {
+                val target = book.readingPosition.coerceIn(0, (paragraphs.size - 1).coerceAtLeast(0))
+                if (paragraphs.isNotEmpty()) txtListState.scrollToItem(target)
+                txtRestored = true
+            }
+
+            LaunchedEffect(txtRestored, txtListState.firstVisibleItemIndex, paragraphs.size) {
+                if (txtRestored && paragraphs.isNotEmpty()) {
+                    val position = txtListState.firstVisibleItemIndex.coerceIn(0, paragraphs.lastIndex)
+                    val progress = if (paragraphs.size <= 1) 0
+                    else (position * 100 / (paragraphs.size - 1)).coerceIn(0, 100)
+                    currentPosition = position
+                    onUpdateBook { current ->
+                        if (current.readingPosition == position && current.progress == progress) current
+                        else current.copy(readingPosition = position, progress = progress)
+                    }
+                }
+            }
+
             LazyColumn(
-                state = listState,
+                state = txtListState,
                 modifier = Modifier.fillMaxSize().clickable { showControls = !showControls },
                 contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 60.dp)
             ) {
                 items(paragraphs.size) { index ->
-                    Text(paragraphs[index], fontSize = fontSize.sp, lineHeight = (fontSize * 1.65f).sp, color = Ink, modifier = Modifier.padding(bottom = 18.dp))
+                    Text(
+                        paragraphs[index],
+                        fontSize = fontSize.sp,
+                        lineHeight = (fontSize * 1.65f).sp,
+                        color = Ink,
+                        modifier = Modifier.padding(bottom = 18.dp)
+                    )
                 }
             }
-            LaunchedEffect(listState.firstVisibleItemIndex) {
-                onProgress(if (paragraphs.size <= 1) 0 else (listState.firstVisibleItemIndex * 100 / paragraphs.size).coerceIn(0, 100))
-            }
         } else {
-            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            LaunchedEffect(book.id, pageCount) {
+                if (pageCount > 0) {
+                    val target = book.readingPosition.coerceIn(0, pageCount - 1)
+                    pdfListState.scrollToItem(target)
+                    page = target
+                    pdfRestored = true
+                }
+            }
+
+            LaunchedEffect(pdfRestored, pdfListState.firstVisibleItemIndex, pageCount) {
+                if (pdfRestored && pageCount > 0) {
+                    val position = pdfListState.firstVisibleItemIndex.coerceIn(0, pageCount - 1)
+                    val progress = if (pageCount <= 1) 0
+                    else (position * 100 / (pageCount - 1)).coerceIn(0, 100)
+                    page = position
+                    currentPosition = position
+                    onUpdateBook { current ->
+                        if (current.readingPosition == position && current.progress == progress) current
+                        else current.copy(readingPosition = position, progress = progress)
+                    }
+                }
+            }
+
+            LaunchedEffect(page, pdfRestored, pageCount) {
+                if (pdfRestored && pageCount > 0 && pdfListState.firstVisibleItemIndex != page) {
+                    pdfListState.animateScrollToItem(page.coerceIn(0, pageCount - 1))
+                }
+            }
+
+            LazyColumn(
+                state = pdfListState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 items(pageCount) { index ->
                     PdfPage(book.path, index, Modifier.fillMaxWidth().clickable { showControls = !showControls })
                 }
             }
-            LaunchedEffect(page) { onProgress(if (pageCount <= 1) 0 else page * 100 / (pageCount - 1)) }
+
             if (showControls && pageCount > 0) {
-                Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    Modifier.fillMaxWidth().padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     TextButton(onClick = { page = (page - 1).coerceAtLeast(0) }) { Text("Назад") }
-                    OutlinedTextField(jump, { jump = it.filter(Char::isDigit) }, modifier = Modifier.width(90.dp), singleLine = true, label = { Text("Страница") })
-                    TextButton(onClick = { page = ((jump.toIntOrNull() ?: 1) - 1).coerceIn(0, pageCount - 1); jump = "" }) { Text("Перейти") }
-                    TextButton(onClick = { page = (page + 1).coerceAtMost(pageCount - 1) }) { Text("Далее") }
+                    OutlinedTextField(
+                        jump,
+                        { jump = it.filter(Char::isDigit) },
+                        modifier = Modifier.width(90.dp),
+                        singleLine = true,
+                        label = { Text("Страница") }
+                    )
+                    TextButton(onClick = {
+                        page = ((jump.toIntOrNull() ?: 1) - 1).coerceIn(0, pageCount - 1)
+                        jump = ""
+                    }) { Text("Перейти") }
+                    TextButton(onClick = { page = (page + 1).coerceAtMost(pageCount - 1) }) {
+                        Text("Далее")
+                    }
                 }
             }
         }
+    }
+
+    if (showNoteEditor) {
+        AlertDialog(
+            onDismissRequest = { showNoteEditor = false; noteDraft = "" },
+            title = { Text("Заметка · " + positionLabel) },
+            text = {
+                OutlinedTextField(
+                    value = noteDraft,
+                    onValueChange = { noteDraft = it.take(2000) },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 110.dp),
+                    placeholder = { Text("Запишите мысль или комментарий к этому месту…") }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = noteDraft.isNotBlank(),
+                    onClick = {
+                        val note = ReaderNote(
+                            id = UUID.randomUUID().toString(),
+                            position = currentPosition,
+                            text = noteDraft.trim()
+                        )
+                        onUpdateBook { current -> current.copy(notes = current.notes + note) }
+                        noteDraft = ""
+                        showNoteEditor = false
+                    }
+                ) { Text("Сохранить") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNoteEditor = false; noteDraft = "" }) { Text("Отмена") }
+            }
+        )
+    }
+
+    if (showBookmarksDialog) {
+        AlertDialog(
+            onDismissRequest = { showBookmarksDialog = false },
+            title = { Text("Закладки") },
+            text = {
+                if (book.bookmarks.isEmpty()) {
+                    Text("Пока нет закладок. Добавьте закладку во время чтения.")
+                } else {
+                    Column(
+                        Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        book.bookmarks.sortedBy { it.position }.forEach { bookmark ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(bookmark.title, fontWeight = FontWeight.Medium)
+                                    Text(
+                                        if (book.type == "pdf") "Страница " + (bookmark.position + 1)
+                                        else "Фрагмент " + (bookmark.position + 1),
+                                        color = Color.Gray,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                                TextButton(onClick = {
+                                    showBookmarksDialog = false
+                                    jumpTo(bookmark.position)
+                                }) { Text("Открыть") }
+                                TextButton(onClick = {
+                                    onUpdateBook { current ->
+                                        current.copy(bookmarks = current.bookmarks.filterNot { it.id == bookmark.id })
+                                    }
+                                }) { Text("Удалить") }
+                            }
+                            HorizontalDivider(color = Color(0xFFECEEEA))
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showBookmarksDialog = false }) { Text("Готово") }
+            }
+        )
+    }
+
+    if (showNotesDialog) {
+        AlertDialog(
+            onDismissRequest = { showNotesDialog = false },
+            title = { Text("Заметки") },
+            text = {
+                if (book.notes.isEmpty()) {
+                    Text("Заметок пока нет. Добавьте первую заметку к текущему месту чтения.")
+                } else {
+                    Column(
+                        Modifier.heightIn(max = 390.dp).verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        book.notes.sortedByDescending { it.createdAt }.forEach { note ->
+                            Column {
+                                Text(
+                                    if (book.type == "pdf") "Страница " + (note.position + 1)
+                                    else "Фрагмент " + (note.position + 1),
+                                    color = Teal,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 12.sp
+                                )
+                                Text(note.text, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                                Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                                    TextButton(onClick = {
+                                        showNotesDialog = false
+                                        jumpTo(note.position)
+                                    }) { Text("К месту") }
+                                    TextButton(onClick = {
+                                        onUpdateBook { current ->
+                                            current.copy(notes = current.notes.filterNot { it.id == note.id })
+                                        }
+                                    }) { Text("Удалить") }
+                                }
+                            }
+                            HorizontalDivider(color = Color(0xFFECEEEA))
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showNotesDialog = false }) { Text("Готово") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showNotesDialog = false
+                    noteDraft = ""
+                    showNoteEditor = true
+                }) { Text("＋ Добавить") }
+            }
+        )
     }
 }
 
