@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.pdf.PdfDocument
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.Bundle
@@ -636,6 +637,33 @@ private fun ReaderScreen(
         }
     }
 
+    val annotationPdfExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/pdf")
+    ) { uri: Uri? ->
+        if (uri != null) {
+            readerScope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val output = context.contentResolver.openOutputStream(uri)
+                            ?: error("Не удалось открыть PDF для записи.")
+                        output.use { stream ->
+                            writeAnnotationsPdf(stream, book, txtDocument.chapters)
+                        }
+                    }
+                }
+                result.onSuccess {
+                    Toast.makeText(context, "PDF-конспект сохранён", Toast.LENGTH_LONG).show()
+                }.onFailure { error ->
+                    Toast.makeText(
+                        context,
+                        "Не удалось создать PDF: ${error.message ?: "ошибка записи"}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
+
     LaunchedEffect(book.id) {
         loading = true
         try {
@@ -1095,7 +1123,17 @@ private fun ReaderScreen(
                                 .ifBlank { "Мои заметки" }
                             annotationExportLauncher.launch("$safeTitle - заметки.txt")
                         }
-                    ) { Text("Экспорт .txt") }
+                    ) { Text("Экспорт TXT") }
+                    TextButton(
+                        enabled = book.annotations.isNotEmpty(),
+                        onClick = {
+                            val safeTitle = book.title
+                                .replace(Regex("""[\\/:*?"<>|]"""), "_")
+                                .take(60)
+                                .ifBlank { "Мои заметки" }
+                            annotationPdfExportLauncher.launch("$safeTitle - конспект.pdf")
+                        }
+                    ) { Text("Экспорт PDF") }
                     TextButton(onClick = { showAnnotations = false }) { Text("Готово") }
                 }
             }
@@ -1325,6 +1363,178 @@ private fun buildAnnotationsExport(book: Book, chapters: List<TxtChapter>): Stri
             }
             appendLine("—".repeat(36))
         }
+    }
+}
+
+private fun writeAnnotationsPdf(
+    output: java.io.OutputStream,
+    book: Book,
+    chapters: List<TxtChapter>
+) {
+    val document = PdfDocument()
+    val pageWidth = 595
+    val pageHeight = 842
+    val margin = 48f
+    val contentWidth = pageWidth - margin * 2
+
+    val titlePaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.rgb(30, 55, 53)
+        textSize = 19f
+        typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)
+    }
+    val metaPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.rgb(100, 110, 108)
+        textSize = 10f
+        typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
+    }
+    val headingPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.rgb(37, 65, 62)
+        textSize = 12f
+        typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)
+    }
+    val bodyPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.rgb(40, 45, 43)
+        textSize = 10.5f
+        typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
+    }
+    val accentPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        style = android.graphics.Paint.Style.FILL
+    }
+    val annotations = book.annotations.sortedWith(
+        compareBy<ReaderAnnotation> { it.position }.thenBy { it.createdAt }
+    )
+    val exportedAt = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date())
+
+    var pageNumber = 0
+    var currentPage: PdfDocument.Page? = null
+    var y = 0f
+
+    fun startPage() {
+        pageNumber += 1
+        val info = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
+        currentPage = document.startPage(info)
+        currentPage!!.canvas.drawColor(android.graphics.Color.WHITE)
+        y = 54f
+        if (pageNumber > 1) {
+            currentPage!!.canvas.drawText(
+                book.title.take(72),
+                margin,
+                34f,
+                metaPaint
+            )
+        }
+    }
+
+    fun finishPage() {
+        val page = currentPage ?: return
+        page.canvas.drawText(
+            "Страница $pageNumber",
+            pageWidth - margin - 62f,
+            pageHeight - 24f,
+            metaPaint
+        )
+        document.finishPage(page)
+        currentPage = null
+    }
+
+    fun nextPage() {
+        finishPage()
+        startPage()
+    }
+
+    fun ensureSpace(height: Float) {
+        if (y + height > pageHeight - 54f) nextPage()
+    }
+
+    fun drawLine(value: String, paint: android.graphics.Paint, indent: Float = 0f) {
+        val lineHeight = paint.textSize * 1.55f
+        ensureSpace(lineHeight)
+        currentPage!!.canvas.drawText(value, margin + indent, y, paint)
+        y += lineHeight
+    }
+
+    fun drawWrapped(value: String, paint: android.graphics.Paint, indent: Float = 0f) {
+        val maxWidth = contentWidth - indent
+        value.split('\n').forEach { paragraph ->
+            if (paragraph.isBlank()) {
+                y += paint.textSize * 0.8f
+            } else {
+                var line = ""
+                paragraph.trim().split(Regex("\\s+")).forEach { word ->
+                    val candidate = if (line.isEmpty()) word else "$line $word"
+                    if (line.isNotEmpty() && paint.measureText(candidate) > maxWidth) {
+                        drawLine(line, paint, indent)
+                        line = word
+                    } else {
+                        line = candidate
+                    }
+                }
+                if (line.isNotEmpty()) drawLine(line, paint, indent)
+            }
+        }
+    }
+
+    try {
+        startPage()
+        drawWrapped("МОЯ ЧИТАЛКА — КОНСПЕКТ", titlePaint)
+        y += 5f
+        drawWrapped("Книга: ${book.title}", metaPaint)
+        drawWrapped("Дата экспорта: $exportedAt", metaPaint)
+        drawWrapped("Записей: ${annotations.size}", metaPaint)
+        y += 14f
+
+        annotations.forEachIndexed { index, annotation ->
+            val chapterTitle = chapters.lastOrNull {
+                it.startParagraph <= annotation.position
+            }?.title ?: "Начало"
+            val colorName: String
+            val markerColor: Int
+            when (annotation.color) {
+                "green" -> {
+                    colorName = "Зелёный"
+                    markerColor = android.graphics.Color.rgb(49, 166, 112)
+                }
+                "blue" -> {
+                    colorName = "Синий"
+                    markerColor = android.graphics.Color.rgb(57, 126, 204)
+                }
+                "pink" -> {
+                    colorName = "Розовый"
+                    markerColor = android.graphics.Color.rgb(209, 100, 145)
+                }
+                else -> {
+                    colorName = "Жёлтый"
+                    markerColor = android.graphics.Color.rgb(218, 171, 42)
+                }
+            }
+
+            ensureSpace(58f)
+            accentPaint.color = markerColor
+            currentPage!!.canvas.drawRoundRect(
+                margin,
+                y - 10f,
+                margin + 5f,
+                y + 12f,
+                2f,
+                2f,
+                accentPaint
+            )
+            drawWrapped("${index + 1}. $chapterTitle · абзац ${annotation.position + 1}", headingPaint, 14f)
+            drawWrapped("Цвет маркера: $colorName", metaPaint, 14f)
+            drawWrapped("Фрагмент:", headingPaint, 14f)
+            drawWrapped(annotation.text, bodyPaint, 14f)
+            if (annotation.note.isNotBlank()) {
+                y += 3f
+                drawWrapped("Моя заметка:", headingPaint, 14f)
+                drawWrapped(annotation.note, bodyPaint, 14f)
+            }
+            y += 14f
+        }
+
+        finishPage()
+        document.writeTo(output)
+    } finally {
+        document.close()
     }
 }
 
