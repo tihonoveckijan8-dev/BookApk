@@ -542,6 +542,7 @@ private fun ReaderScreen(
     var loading by remember { mutableStateOf(true) }
     var jump by remember { mutableStateOf("") }
     var scale by remember(book.id) { mutableFloatStateOf(1f) }
+    var scrubPage by remember(book.id) { mutableFloatStateOf(book.readingPosition.coerceAtLeast(0).toFloat()) }
     var dragTotal by remember { mutableFloatStateOf(0f) }
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = book.readingPosition.coerceAtLeast(0))
     val readerScope = rememberCoroutineScope()
@@ -627,6 +628,29 @@ private fun ReaderScreen(
                 }
             }
         } else {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "PDF",
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                    letterSpacing = 1.sp
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    if (pageCount > 0) "${page + 1} / $pageCount" else "Загрузка страниц",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f)
+                )
+                Spacer(Modifier.width(10.dp))
+                TextButton(
+                    onClick = { scale = 1f },
+                    enabled = scale > 1.01f
+                ) { Text("Сбросить масштаб", fontSize = 11.sp) }
+            }
             Box(
                 Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
                     .clip(RoundedCornerShape(10.dp))
@@ -635,8 +659,14 @@ private fun ReaderScreen(
                         detectHorizontalDragGestures(
                             onHorizontalDrag = { _, amount -> dragTotal += amount },
                             onDragEnd = {
-                                if (dragTotal < -45f) page = (page + 1).coerceAtMost(pageCount - 1)
-                                if (dragTotal > 45f) page = (page - 1).coerceAtLeast(0)
+                                if (dragTotal < -45f) {
+                                    page = (page + 1).coerceAtMost((pageCount - 1).coerceAtLeast(0))
+                                    scale = 1f
+                                }
+                                if (dragTotal > 45f) {
+                                    page = (page - 1).coerceAtLeast(0)
+                                    scale = 1f
+                                }
                                 dragTotal = 0f
                             },
                             onDragCancel = { dragTotal = 0f }
@@ -644,43 +674,76 @@ private fun ReaderScreen(
                     },
                 contentAlignment = Alignment.Center
             ) {
-                PdfPage(book.path, page, Modifier.fillMaxSize().graphicsLayer(scaleX = scale, scaleY = scale).transformable(
-                    rememberTransformableState { zoomChange, _, _ -> scale = (scale * zoomChange).coerceIn(1f, 4f) }
-                ))
+                PdfPage(
+                    book.path,
+                    page,
+                    Modifier.fillMaxSize().graphicsLayer(scaleX = scale, scaleY = scale).transformable(
+                        rememberTransformableState { zoomChange, _, _ ->
+                            scale = (scale * zoomChange).coerceIn(1f, 4f)
+                        }
+                    )
+                )
                 if (pageCount > 1) {
-                    Row(Modifier.align(Alignment.CenterStart).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        FilledIconButton(onClick = { page = (page - 1).coerceAtLeast(0); scale = 1f }, enabled = page > 0) {
-                            Icon(Icons.Rounded.ChevronLeft, contentDescription = "Предыдущая страница")
-                        }
-                        FilledIconButton(onClick = { page = (page + 1).coerceAtMost(pageCount - 1); scale = 1f }, enabled = page < pageCount - 1) {
-                            Icon(Icons.Rounded.ChevronRight, contentDescription = "Следующая страница")
-                        }
+                    Row(
+                        Modifier.align(Alignment.Center).fillMaxWidth().padding(horizontal = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        FilledTonalIconButton(
+                            onClick = { page = (page - 1).coerceAtLeast(0); scale = 1f },
+                            enabled = page > 0
+                        ) { Icon(Icons.Rounded.ChevronLeft, contentDescription = "Предыдущая страница") }
+                        FilledTonalIconButton(
+                            onClick = { page = (page + 1).coerceAtMost(pageCount - 1); scale = 1f },
+                            enabled = page < pageCount - 1
+                        ) { Icon(Icons.Rounded.ChevronRight, contentDescription = "Следующая страница") }
                     }
                 }
             }
             LaunchedEffect(page, pageCount) {
-                if (pageCount > 0) onPosition(page, if (pageCount <= 1) 0 else page * 100 / (pageCount - 1))
+                if (pageCount > 0) {
+                    scrubPage = page.toFloat()
+                    onPosition(page, if (pageCount <= 1) 0 else page * 100 / (pageCount - 1))
+                }
             }
-            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { page = (page - 1).coerceAtLeast(0); scale = 1f }, enabled = page > 0) { Text("Назад") }
-                Spacer(Modifier.weight(1f))
-                OutlinedTextField(
-                    value = jump,
-                    onValueChange = { jump = it.filter(Char::isDigit).take(5) },
-                    modifier = Modifier.width(104.dp),
-                    singleLine = true,
-                    label = { Text("Страница") }
+            Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 4.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(
+                        onClick = { page = 0; scale = 1f },
+                        enabled = page > 0
+                    ) { Text("В начало", fontSize = 11.sp) }
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        "Страница ${page + 1} из $pageCount",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(Modifier.weight(1f))
+                    TextButton(
+                        onClick = { page = (pageCount - 1).coerceAtLeast(0); scale = 1f },
+                        enabled = page < pageCount - 1
+                    ) { Text("В конец", fontSize = 11.sp) }
+                }
+                Slider(
+                    value = scrubPage.coerceIn(0f, (pageCount - 1).coerceAtLeast(0).toFloat()),
+                    onValueChange = { scrubPage = it },
+                    onValueChangeFinished = {
+                        page = scrubPage.roundToInt().coerceIn(0, (pageCount - 1).coerceAtLeast(0))
+                        scale = 1f
+                    },
+                    valueRange = 0f..(pageCount - 1).coerceAtLeast(0).toFloat(),
+                    enabled = pageCount > 1
                 )
-                TextButton(onClick = {
-                    page = ((jump.toIntOrNull() ?: page + 1) - 1).coerceIn(0, (pageCount - 1).coerceAtLeast(0))
-                    jump = ""
-                    scale = 1f
-                }) { Text("Перейти") }
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = { page = (page + 1).coerceAtMost((pageCount - 1).coerceAtLeast(0)); scale = 1f }, enabled = page < pageCount - 1) { Text("Далее") }
-            }
-            Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.Center) {
-                Text("Свайп влево или вправо · щипок для масштаба", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = .55f))
+                Row(
+                    Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        "Свайп для перелистывания · щипок для увеличения",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = .55f)
+                    )
+                }
             }
         }
     }
