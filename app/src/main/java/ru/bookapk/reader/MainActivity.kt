@@ -1052,6 +1052,7 @@ private fun ReaderScreen(
                         }
                     }
                 }
+                    }
             },
             confirmButton = { TextButton(onClick = { showAnnotations = false }) { Text("Готово") } }
         )
