@@ -731,7 +731,7 @@ private fun ReaderScreen(
                         page = scrubPage.roundToInt().coerceIn(0, (pageCount - 1).coerceAtLeast(0))
                         scale = 1f
                     },
-                    valueRange = 0f..(pageCount - 1).coerceAtLeast(0).toFloat(),
+                    valueRange = 0f..(pageCount - 1).coerceAtLeast(1).toFloat(),
                     enabled = pageCount > 1
                 )
                 Row(
