@@ -70,6 +70,7 @@ private fun BookApkApp() {
     var selectedCategory by remember { mutableStateOf<String?>(null) }
     var showCategoryDialog by remember { mutableStateOf(false) }
     var categoryDraft by remember { mutableStateOf("") }
+    var categoryDraftTargetBookId by remember { mutableStateOf<String?>(null) }
     var categoryTargetBook by remember { mutableStateOf<Book?>(null) }
     var sortOrder by remember { mutableStateOf("recent") }
     var showSortMenu by remember { mutableStateOf(false) }
@@ -201,7 +202,7 @@ private fun BookApkApp() {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(if (showFavorites) "Избранное" else "Все книги", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                         TextButton(onClick = { showManageCategories = true }) { Text("Папки") }
-                        TextButton(onClick = { showCategoryDialog = true }) { Text("＋") }
+                        TextButton(onClick = { categoryDraftTargetBookId = null; showCategoryDialog = true }) { Text("＋") }
                         TextButton(onClick = { showFavorites = !showFavorites }) {
                             Icon(if (showFavorites) Icons.Rounded.Book else Icons.Rounded.FavoriteBorder, contentDescription = null, modifier = Modifier.size(17.dp))
                             Spacer(Modifier.width(5.dp))
@@ -360,7 +361,7 @@ private fun BookApkApp() {
     }
     if (showCategoryDialog) {
         AlertDialog(
-            onDismissRequest = { showCategoryDialog = false; categoryDraft = "" },
+            onDismissRequest = { showCategoryDialog = false; categoryDraft = ""; categoryDraftTargetBookId = null },
             title = { Text("Новая категория") },
             text = {
                 OutlinedTextField(
@@ -374,16 +375,22 @@ private fun BookApkApp() {
             confirmButton = {
                 TextButton(onClick = {
                     val name = categoryDraft.trim()
-                    if (name.isNotBlank() && categories.none { it.equals(name, ignoreCase = true) }) {
-                        val updated = (categories + name).sortedBy { it.lowercase() }
-                        categories = updated
-                        scope.launch(Dispatchers.IO) { store.saveCategories(updated) }
+                    if (name.isNotBlank()) {
+                        // WHY: reuse an existing folder on a case-insensitive match instead of creating duplicates.
+                        val resolvedName = categories.firstOrNull { it.equals(name, ignoreCase = true) } ?: name
+                        if (categories.none { it.equals(resolvedName, ignoreCase = true) }) {
+                            val updated = (categories + resolvedName).sortedBy { it.lowercase() }
+                            categories = updated
+                            scope.launch(Dispatchers.IO) { store.saveCategories(updated) }
+                        }
+                        categoryDraftTargetBookId?.let { bookId -> assignCategory(bookId, resolvedName) }
                     }
                     categoryDraft = ""
+                    categoryDraftTargetBookId = null
                     showCategoryDialog = false
                 }) { Text("Создать") }
             },
-            dismissButton = { TextButton(onClick = { showCategoryDialog = false; categoryDraft = "" }) { Text("Отмена") } }
+            dismissButton = { TextButton(onClick = { showCategoryDialog = false; categoryDraft = ""; categoryDraftTargetBookId = null }) { Text("Отмена") } }
         )
     }
     if (showManageCategories) {
@@ -423,7 +430,7 @@ private fun BookApkApp() {
                 TextButton(onClick = { showManageCategories = false }) { Text("Готово") }
             },
             dismissButton = {
-                TextButton(onClick = { showManageCategories = false; showCategoryDialog = true }) { Text("＋ Создать") }
+                TextButton(onClick = { showManageCategories = false; categoryDraftTargetBookId = null; showCategoryDialog = true }) { Text("＋ Создать") }
             }
         )
     }
@@ -482,6 +489,7 @@ private fun BookApkApp() {
                         TextButton(onClick = { assignCategory(target.id, category) }) { Text(category) }
                     }
                     TextButton(onClick = {
+                        categoryDraftTargetBookId = target.id
                         categoryTargetBook = null
                         showCategoryDialog = true
                     }) { Text("＋ Создать категорию") }
