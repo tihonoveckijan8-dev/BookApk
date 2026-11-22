@@ -834,6 +834,7 @@ private fun ReaderScreen(
     var studyCardIndex by remember { mutableIntStateOf(0) }
     var studyCardRevealed by remember { mutableStateOf(false) }
     var annotationFilter by remember { mutableStateOf("all") }
+    var annotationSearch by remember { mutableStateOf("") }
     var editingAnnotationId by remember { mutableStateOf<String?>(null) }
     var showAnnotationDialog by remember { mutableStateOf(false) }
     var annotationNote by remember { mutableStateOf("") }
@@ -1312,6 +1313,19 @@ private fun ReaderScreen(
                         ) {
                             Text("Повторить сегодня · $dueReviewCount из ${book.annotations.size}")
                         }
+                        OutlinedTextField(
+                            value = annotationSearch,
+                            onValueChange = { annotationSearch = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            label = { Text("Поиск по выделениям и заметкам") },
+                            placeholder = { Text("Введите слово или фразу") },
+                            trailingIcon = {
+                                if (annotationSearch.isNotBlank()) {
+                                    TextButton(onClick = { annotationSearch = "" }) { Text("Очистить") }
+                                }
+                            }
+                        )
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             listOf("all" to "Все", "yellow" to "Жёлтые", "green" to "Зелёные", "blue" to "Синие", "pink" to "Розовые").forEach { (id, label) ->
                                 FilterChip(
@@ -1321,8 +1335,10 @@ private fun ReaderScreen(
                                 )
                             }
                         }
+                        val query = annotationSearch.trim()
                         val filteredAnnotations = book.annotations
                             .filter { annotationFilter == "all" || it.color == annotationFilter }
+                            .filter { query.isBlank() || it.text.contains(query, ignoreCase = true) || it.note.contains(query, ignoreCase = true) }
                             .sortedBy { it.position }
                         // WHY: grouping by the parsed chapter start keeps repeated chapter titles separate.
                         val annotationGroups = filteredAnnotations
@@ -1334,6 +1350,15 @@ private fun ReaderScreen(
                             .toList()
                             .sortedBy { it.first.startParagraph }
 
+                        if (filteredAnnotations.isEmpty()) {
+                            Text(
+                                if (query.isBlank()) "В этой цветовой группе пока нет записей."
+                                else "По запросу «$query» ничего не найдено.",
+                                modifier = Modifier.padding(vertical = 18.dp),
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = .65f)
+                            )
+                        } else {
                         LazyColumn(
                             Modifier.heightIn(max = 340.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -1411,6 +1436,7 @@ private fun ReaderScreen(
                                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f))
                                 }
                             }
+                        }
                         }
                 }
                     }
