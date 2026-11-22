@@ -4,6 +4,9 @@ import android.content.Context
 import android.net.Uri
 import android.util.Xml
 import org.jsoup.Jsoup
+import org.jsoup.nodes.Element
+import org.jsoup.nodes.Node
+import org.jsoup.nodes.TextNode
 import org.jsoup.parser.Parser
 import org.xmlpull.v1.XmlPullParser
 import java.io.File
@@ -181,6 +184,24 @@ object EbookImporter {
         }
     }
 
+
+    /**
+     * Keeps basic inline typography while flattening EPUB XHTML into the reader's paragraph model.
+     * WHY: bold/italic/underline cues survive import without introducing a second layout engine.
+     */
+    private fun renderEpubInline(node: Node): String {
+        if (node is TextNode) return node.wholeText
+        if (node !is Element) return node.childNodes().joinToString("") { renderEpubInline(it) }
+        if (node.tagName() == "br") return "\\n"
+        val content = node.childNodes().joinToString("") { renderEpubInline(it) }
+        return when (node.tagName().lowercase()) {
+            "strong", "b" -> if (content.isBlank()) content else "**$content**"
+            "em", "i" -> if (content.isBlank()) content else "*$content*"
+            "u" -> if (content.isBlank()) content else "__$content__"
+            else -> content
+        }
+    }
+
     private fun readEpub(context: Context, source: Uri): String {
         val input = context.contentResolver.openInputStream(source)
             ?: throw IllegalStateException("Не удалось открыть EPUB-файл.")
@@ -225,7 +246,8 @@ object EbookImporter {
                         .filter { element ->
                             element.parents().none { parent -> parent.tagName() in blockTags }
                         }
-                        .map { it.text().trim() }.filter { it.isNotBlank() }
+                        .map { renderEpubInline(it).trim().replace(Regex("[ \\t]+"), " ").replace(Regex(" *\\n *"), "\\n") }
+                        .filter { it.isNotBlank() }
                     val chapterText = (if (blocks.isNotEmpty()) blocks else listOf(body.text().trim()))
                         .filter { it.isNotBlank() }
                     if (chapterText.isNotEmpty()) {
