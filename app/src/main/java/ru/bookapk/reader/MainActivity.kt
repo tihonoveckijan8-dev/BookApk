@@ -8,6 +8,7 @@ import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -67,6 +68,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 import kotlin.math.roundToInt
 
@@ -606,6 +610,32 @@ private fun ReaderScreen(
     )
     val readerScope = rememberCoroutineScope()
 
+    val annotationExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri: Uri? ->
+        if (uri != null) {
+            readerScope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val exportText = buildAnnotationsExport(book, txtDocument.chapters)
+                        val output = context.contentResolver.openOutputStream(uri)
+                            ?: error("Не удалось открыть файл для записи.")
+                        output.writer(Charsets.UTF_8).use { writer -> writer.write(exportText) }
+                    }
+                }
+                result.onSuccess {
+                    Toast.makeText(context, "Заметки экспортированы", Toast.LENGTH_LONG).show()
+                }.onFailure { error ->
+                    Toast.makeText(
+                        context,
+                        "Не удалось экспортировать: ${error.message ?: "ошибка записи"}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
+
     LaunchedEffect(book.id) {
         loading = true
         try {
@@ -1054,7 +1084,21 @@ private fun ReaderScreen(
                 }
                     }
             },
-            confirmButton = { TextButton(onClick = { showAnnotations = false }) { Text("Готово") } }
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(
+                        enabled = book.annotations.isNotEmpty(),
+                        onClick = {
+                            val safeTitle = book.title
+                                .replace(Regex("""[\\/:*?"<>|]"""), "_")
+                                .take(60)
+                                .ifBlank { "Мои заметки" }
+                            annotationExportLauncher.launch("$safeTitle - заметки.txt")
+                        }
+                    ) { Text("Экспорт .txt") }
+                    TextButton(onClick = { showAnnotations = false }) { Text("Готово") }
+                }
+            }
         )
     }
 
@@ -1243,6 +1287,43 @@ private fun ReaderScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+private fun buildAnnotationsExport(book: Book, chapters: List<TxtChapter>): String {
+    val annotations = book.annotations.sortedWith(
+        compareBy<ReaderAnnotation> { it.position }.thenBy { it.createdAt }
+    )
+    val exportedAt = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date())
+
+    return buildString {
+        appendLine("МОЯ ЧИТАЛКА — ЭКСПОРТ ЗАМЕТОК")
+        appendLine("Книга: ${book.title}")
+        appendLine("Дата экспорта: $exportedAt")
+        appendLine("Количество записей: ${annotations.size}")
+
+        annotations.forEachIndexed { index, annotation ->
+            val chapterTitle = chapters.lastOrNull {
+                it.startParagraph <= annotation.position
+            }?.title ?: "Начало"
+            val colorTitle = when (annotation.color) {
+                "green" -> "Зелёный"
+                "blue" -> "Синий"
+                "pink" -> "Розовый"
+                else -> "Жёлтый"
+            }
+
+            appendLine()
+            appendLine("${index + 1}. $chapterTitle · абзац ${annotation.position + 1}")
+            appendLine("Цвет маркера: $colorTitle")
+            appendLine("Фрагмент:")
+            appendLine(annotation.text)
+            if (annotation.note.isNotBlank()) {
+                appendLine("Моя заметка:")
+                appendLine(annotation.note)
+            }
+            appendLine("—".repeat(36))
         }
     }
 }
