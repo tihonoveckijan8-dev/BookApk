@@ -222,7 +222,7 @@ object LibraryBackup {
                     require(imageName.matches(Regex("[A-Za-z0-9._-]+\\.(jpg|jpeg|png|webp|gif)"))) {
                         "Недопустимое имя иллюстрации."
                     }
-                    require(imageArchive.matches(Regex("""images/book-[0-9]+-[A-Za-z0-9._-]+\\.(jpg|jpeg|png|webp|gif)"""))) {
+                    require(imageArchive.matches(Regex("""images/book-[0-9]+-[A-Za-z0-9._-]+\(jpg|jpeg|png|webp|gif)"""))) {
                         "Недопустимый путь к иллюстрации."
                     }
                     val imageFile = extracted[imageArchive]
