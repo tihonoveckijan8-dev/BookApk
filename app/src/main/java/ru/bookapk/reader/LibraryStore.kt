@@ -10,6 +10,8 @@ import org.json.JSONArray
 private val Context.dataStore by preferencesDataStore(name = "book_library")
 private val LIBRARY_KEY = stringPreferencesKey("books")
 private val CATEGORIES_KEY = stringPreferencesKey("categories")
+private val VISUAL_STYLE_KEY = stringPreferencesKey("visual_style")
+private val ICON_STYLE_KEY = stringPreferencesKey("icon_style")
 
 class LibraryStore(private val context: Context) {
     suspend fun load(): List<Book> {
@@ -38,5 +40,20 @@ class LibraryStore(private val context: Context) {
         val array = JSONArray()
         categories.forEach { array.put(it.toJson()) }
         context.dataStore.edit { it[CATEGORIES_KEY] = array.toString() }
+    }
+
+    suspend fun loadAppearance(): ReaderAppearance {
+        val prefs = context.dataStore.data.first()
+        return ReaderAppearance(
+            visualStyle = prefs[VISUAL_STYLE_KEY] ?: "classic",
+            iconStyle = prefs[ICON_STYLE_KEY] ?: "classic"
+        )
+    }
+
+    suspend fun saveAppearance(appearance: ReaderAppearance) {
+        context.dataStore.edit {
+            it[VISUAL_STYLE_KEY] = appearance.visualStyle
+            it[ICON_STYLE_KEY] = appearance.iconStyle
+        }
     }
 }
