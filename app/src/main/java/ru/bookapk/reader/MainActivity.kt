@@ -807,7 +807,7 @@ private fun ReaderScreen(
     LaunchedEffect(book.id) {
         loading = true
         try {
-            if (book.type == "txt") {
+            if (book.type != "pdf") {
                 txtDocument = withContext(Dispatchers.IO) { TxtBookParser.parse(File(book.path).readText(Charsets.UTF_8)) }
             } else {
                 pageCount = withContext(Dispatchers.IO) {
@@ -821,7 +821,7 @@ private fun ReaderScreen(
     }
 
     LaunchedEffect(book.id, txtDocument.paragraphs.size) {
-        if (book.type == "txt" && txtDocument.paragraphs.isNotEmpty()) {
+        if (book.type != "pdf" && txtDocument.paragraphs.isNotEmpty()) {
             listState.scrollToItem(
                 book.readingPosition.coerceIn(0, txtDocument.paragraphs.lastIndex),
                 book.readingOffsetPx.coerceAtLeast(0)
@@ -849,7 +849,7 @@ private fun ReaderScreen(
         else -> Color(0xFF262B29)
     }
 
-    Column(Modifier.fillMaxSize().background(if (book.type == "txt") readerBackground else MaterialTheme.colorScheme.background)) {
+    Column(Modifier.fillMaxSize().background(if (book.type != "pdf") readerBackground else MaterialTheme.colorScheme.background)) {
         Row(
             Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 10.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -867,7 +867,7 @@ private fun ReaderScreen(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            if (book.type == "txt") TextButton(onClick = { showContents = true }) { Text("Оглавление", fontSize = 12.sp) }
+            if (book.type != "pdf") TextButton(onClick = { showContents = true }) { Text("Оглавление", fontSize = 12.sp) }
             IconButton(onClick = { showBookmarks = true }) {
                 Icon(Icons.Rounded.Bookmarks, contentDescription = "Все закладки", tint = MaterialTheme.colorScheme.primary)
             }
@@ -886,7 +886,7 @@ private fun ReaderScreen(
 
         if (loading) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-        } else if (book.type == "txt") {
+        } else if (book.type != "pdf") {
             Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Чтение", fontSize = 12.sp, color = readerForeground.copy(alpha = .68f))
                 Text("${fontSize.toInt()} pt", fontSize = 12.sp, color = readerForeground)
