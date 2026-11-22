@@ -45,7 +45,10 @@ data class ReaderAnnotation(
     val text: String,
     val note: String = "",
     val color: String = "yellow",
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val reviewStage: Int = 0,
+    val nextReviewAt: Long = 0L,
+    val lastReviewedAt: Long = 0L
 ) {
     fun toJson() = JSONObject()
         .put("id", id)
@@ -55,6 +58,9 @@ data class ReaderAnnotation(
         .put("note", note)
         .put("color", color)
         .put("createdAt", createdAt)
+        .put("reviewStage", reviewStage)
+        .put("nextReviewAt", nextReviewAt)
+        .put("lastReviewedAt", lastReviewedAt)
 
     companion object {
         fun fromJson(json: JSONObject) = ReaderAnnotation(
@@ -64,7 +70,10 @@ data class ReaderAnnotation(
             text = json.optString("text", ""),
             note = json.optString("note", ""),
             color = json.optString("color", "yellow").takeIf { it in setOf("yellow", "green", "blue", "pink") } ?: "yellow",
-            createdAt = json.optLong("createdAt", 0L)
+            createdAt = json.optLong("createdAt", 0L),
+            reviewStage = json.optInt("reviewStage", 0).coerceIn(0, 4),
+            nextReviewAt = json.optLong("nextReviewAt", 0L).coerceAtLeast(0L),
+            lastReviewedAt = json.optLong("lastReviewedAt", 0L).coerceAtLeast(0L)
         )
     }
 }
