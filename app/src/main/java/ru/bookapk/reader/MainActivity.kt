@@ -1207,6 +1207,18 @@ private fun ReaderScreen(
                 "pink" -> Color(0xFFE879A8)
                 else -> Color(0xFFE7BD35)
             }
+            val now = System.currentTimeMillis()
+            val reviewStatus = when {
+                card.lastReviewedAt == 0L -> "Новая карточка"
+                card.nextReviewAt > now -> {
+                    val nextDate = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
+                        .format(Date(card.nextReviewAt))
+                    if (card.reviewStage >= 4) "Закреплено · следующее повторение $nextDate"
+                    else "Следующее повторение · $nextDate"
+                }
+                card.nextReviewAt > 0L -> "Пора повторить"
+                else -> "Готова к повторению"
+            }
 
             AlertDialog(
                 onDismissRequest = { showStudyCards = false },
@@ -1242,6 +1254,11 @@ private fun ReaderScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
+                                    reviewStatus,
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = .62f)
+                                )
+                                Text(
                                     card.text,
                                     fontSize = 15.sp,
                                     lineHeight = 22.sp,
@@ -1256,6 +1273,56 @@ private fun ReaderScreen(
                                         fontSize = 14.sp,
                                         lineHeight = 20.sp
                                     )
+                                    Row(
+                                        Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        OutlinedButton(
+                                            modifier = Modifier.weight(1f),
+                                            onClick = {
+                                                val reviewedAt = System.currentTimeMillis()
+                                                onUpdateAnnotation(
+                                                    card.copy(
+                                                        reviewStage = 0,
+                                                        lastReviewedAt = reviewedAt,
+                                                        nextReviewAt = reviewedAt + 10L * 60L * 1000L
+                                                    )
+                                                )
+                                                if (safeIndex == studyCards.lastIndex) {
+                                                    showStudyCards = false
+                                                } else {
+                                                    studyCardIndex = safeIndex + 1
+                                                    studyCardRevealed = false
+                                                }
+                                            }
+                                        ) { Text("Повторить") }
+                                        Button(
+                                            modifier = Modifier.weight(1f),
+                                            onClick = {
+                                                val reviewedAt = System.currentTimeMillis()
+                                                val nextStage = (card.reviewStage + 1).coerceAtMost(4)
+                                                val intervalDays = when (nextStage) {
+                                                    1 -> 1L
+                                                    2 -> 3L
+                                                    3 -> 7L
+                                                    else -> 30L
+                                                }
+                                                onUpdateAnnotation(
+                                                    card.copy(
+                                                        reviewStage = nextStage,
+                                                        lastReviewedAt = reviewedAt,
+                                                        nextReviewAt = reviewedAt + intervalDays * 24L * 60L * 60L * 1000L
+                                                    )
+                                                )
+                                                if (safeIndex == studyCards.lastIndex) {
+                                                    showStudyCards = false
+                                                } else {
+                                                    studyCardIndex = safeIndex + 1
+                                                    studyCardRevealed = false
+                                                }
+                                            }
+                                        ) { Text("Знаю") }
+                                    }
                                 } else {
                                     Text(
                                         "Попробуйте вспомнить, почему вы отметили этот фрагмент. Затем откройте заметку.",
