@@ -641,6 +641,7 @@ private fun ReaderScreen(
                 Icon(Icons.Rounded.Bookmarks, contentDescription = "Все закладки", tint = MaterialTheme.colorScheme.primary)
             }
             IconButton(onClick = {
+                editingBookmarkId = null
                 bookmarkTitle = if (book.type == "pdf") "Страница ${savedPosition + 1}" else "Фрагмент ${savedPosition + 1}"
                 bookmarkNote = ""
                 showBookmarkDialog = true
@@ -815,7 +816,10 @@ private fun ReaderScreen(
 
     if (showBookmarkDialog) {
         AlertDialog(
-            onDismissRequest = { showBookmarkDialog = false },
+            onDismissRequest = {
+                editingBookmarkId = null
+                showBookmarkDialog = false
+            },
             title = { Text(if (editingBookmarkId == null) "Новая закладка" else "Редактировать закладку") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
